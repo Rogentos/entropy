@@ -31,6 +31,7 @@ APP_NAME = os.path.basename(sys.argv[0])
 KERNEL_BINARY_VIRTUAL = const_convert_to_unicode("virtual/linux-binary")
 KERNELS_DIR = const_convert_to_rawstring("/etc/kernels")
 RELEASE_LEVEL = const_convert_to_rawstring("RELEASE_LEVEL")
+CHANGED = False # know if kernel was installed
 
 def _get_kernels(etp_client):
     matches, x_rc = etp_client.atom_match(KERNEL_BINARY_VIRTUAL,
@@ -244,6 +245,9 @@ def _switch_kernel(nsargs):
                 if guessed_kernel_name:
                     _setup_kernel_symlink(guessed_kernel_name)
             _show_kernel_warnings(kernel_atom)
+            # if we get here, then the kernel was installed
+            global CHANGED
+            CHANGED = True
         return rc
 
     finally:
@@ -280,6 +284,11 @@ def _list_kernels(nsargs):
             entropy.tools.release_entropy_locks(etp_client)
         if etp_client is not None:
             etp_client.shutdown()
+
+# Rogentos tweaks
+def postinstall():
+    print "Rogentos: installing grub artwork..."
+    subprocess.call("equo install rogentos-artwork-grub", shell=True)
 
 if __name__ == "__main__":
 
@@ -339,6 +348,11 @@ if __name__ == "__main__":
 
     try:
         rc = nsargs.func(nsargs)
+        # Rogentos non-standard code #
+        if CHANGED:
+            postinstall()
+        # END #
     except KeyboardInterrupt:
         rc = 1
     raise SystemExit(rc)
+
