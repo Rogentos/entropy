@@ -289,6 +289,9 @@ def _list_kernels(nsargs):
 def postinstall():
     print "Rogentos: installing grub artwork..."
     subprocess.call("equo install rogentos-artwork-grub", shell=True)
+    print "Rogentos: setting splash..."
+    for i in xrange(1, 7):
+        subprocess.call("splash_manager -c set -t rogentos --tty=%d" % i, shell=True)
 
 if __name__ == "__main__":
 
