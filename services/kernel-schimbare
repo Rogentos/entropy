@@ -123,7 +123,7 @@ def _get_opengl_impl():
     eselect_exec = "/usr/bin/eselect"
     sts = 1
     out = "xorg-x11"
-    if os.access(eselect_exec, os.X_OK) and not etpUi['simuleaza']:
+    if os.access(eselect_exec, os.X_OK) and not etpUi['pretend']:
         sts, xout = entropy.tools.getstatusoutput("%s opengl show" % (
             eselect_exec,))
         if sts == 0:
@@ -144,7 +144,7 @@ def _show_kernel_warnings(kernel_atom):
 
 def _switch_kernel(nsargs):
 
-    from_running = nsargs.from_running
+    from_running = nsargs.din_rulare
     kernel_package = nsargs.kernel
 
     etp_client = None
@@ -234,7 +234,7 @@ def _switch_kernel(nsargs):
             atomsdata = matches,
             check_critical_updates = False
         )
-        if (rc == 0) and (not etpUi['simuleaza']):
+        if (rc == 0) and (not etpUi['pretend']):
             _set_opengl_impl(opengl)
             if target_tag:
                 # if target_tag is None, we are unable to set the symlink
@@ -276,7 +276,7 @@ def _list_kernels(nsargs):
             repo = etp_client.open_repository(pkg_repo)
             print_package_info(pkg_id, etp_client, repo,
                 show_repo_if_quiet = True, extended = etpUi['verbose'],
-                quiet = etpUi['mut'])
+                quiet = etpUi['quiet'])
 
         return 0
     finally:
@@ -302,14 +302,14 @@ if __name__ == "__main__":
         prog=APP_NAME)
 
     def _add_standard_args(_parser, restricted):
-        _parser.add_argument("--mut", "-m", action="store_true",
+        _parser.add_argument("--quiet", "-q", action="store_true",
                             default=False,
                             help=_("modul mut"))
         if not restricted:
-            _parser.add_argument("--intreaba", "-i", action="store_true",
+            _parser.add_argument("--ask", "-a", action="store_true",
                                  default=False,
                                  help=_("confirma"))
-            _parser.add_argument("--simuleaza", "-s", action="store_true",
+            _parser.add_argument("--pretend", "-p", action="store_true",
                                  default=False,
                                  help=_("doar arata ce va fi facut"))
 
@@ -346,9 +346,9 @@ if __name__ == "__main__":
         parser.print_help()
         raise SystemExit(1)
 
-    etpUi['intreaba'] = getattr(nsargs, "intreaba", etpUi['intreaba'])
-    etpUi['mut'] = getattr(nsargs, "mut", etpUi['mut'])
-    etpUi['simuleaza'] = getattr(nsargs, "simuleaza", etpUi['simuleaza'])
+    etpUi['ask'] = getattr(nsargs, "ask", etpUi['ask'])
+    etpUi['quiet'] = getattr(nsargs, "quiet", etpUi['quiet'])
+    etpUi['pretend'] = getattr(nsargs, "pretend", etpUi['pretend'])
 
     try:
         rc = nsargs.func(nsargs)
