@@ -731,7 +731,7 @@ class RigoServiceController(GObject.Object):
         Notify User about Application Management errors.
         """
         if app is None:
-            app_name = _("Application")
+            app_name = prepare_markup(_("Application"))
         else:
             app_name = app.name
         msg = prepare_markup(_("An <b>unknown error</b> occurred"))
@@ -1074,6 +1074,16 @@ class RigoServiceController(GObject.Object):
         # reset progress bar, we're done with it
         if self._wc is not None:
             self._wc.reset_progress()
+
+        # revalidate all the repositories
+        # so that Entropy.repositories() and other internal
+        # metadata is consistent with the newly available
+        # repositories.
+        self._entropy.rwsem().writer_acquire()
+        try:
+            self._entropy._validate_repositories()
+        finally:
+            self._entropy.rwsem().writer_release()
 
         local_activity = LocalActivityStates.UPDATING_REPOSITORIES
         # we don't expect to fail here, it would

@@ -1,3 +1,84 @@
+commit 91a96abd457ba0f110bad0fa7c9af52a09853fa9
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Sep 3 19:25:01 2012 +0200
+
+    Release Entropy 140
+
+commit 2092303f5579ecf9523d2ab0fb62a10837250d94
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Sep 3 19:17:13 2012 +0200
+
+    [Rigo] always validate repositories after update
+    
+    On a fresh install, with no downloaded repositories, users were forced
+    to restart Rigo in order to have the search function fully functional.
+    If a local repository is configured but not downloaded (thus, not
+    available) the same bug happens.
+    
+    It turned out to be Entropy._enabled_repos, returned by Entropy.repositories()
+    which didn't get re-initialized after a repository update. This commit adds
+    a _validate_repositories() call inside _repositories_updated_signal().
+
+commit 6f137d758d664314fbd6cf88a7112825098d304d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 2 21:03:19 2012 +0200
+
+    [Rigo] Application: escape _("N/A")
+    
+    Application.get_markup() and Application.get_extended_markup() must
+    always return bytestring (decoded) data to make Gtk3 libs and code
+    happy. It happened that _("N/A") was returned without passing through
+    prepare_markup() or escape_markup(). This commit fixes it.
+
+commit 763ece862e5b6faa5aec38b331d5f474420b6c78
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 2 20:56:30 2012 +0200
+
+    [Rigo] RigoServiceController: convert app_name=_("Application") to rawstring
+    
+    If app_name is unicode decoded, the following code will fail (in pl_PL):
+    
+      >>> prepare_markup(_("<b>%s</b>, internal error")) % (_("Application"),)
+    
+    with a nice UnicodeDecodeError due to implicit bytestring decode.
+    prepare_markup() output is bytestring, _() output is unicode.
+    Thanks to Enlik for reporting.
+
+commit 918a388252f34f7c42f14685ba688a61b0804e8f
+Author: Sławomir Nizio <slawomir.nizio@sabayon.org>
+Date:   Sun Sep 2 20:49:31 2012 +0200
+
+    [magneto,rigo] modernize .desktop files
+
+commit 32fa18f638f01f9f04f265a89c3539478df7988f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 2 17:21:41 2012 +0200
+
+    Tagging Entropy version 139
+
+commit 4a37aed84a66505a524cbed9fccd5bcb2a4927dd
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 2 17:21:40 2012 +0200
+
+    Release Entropy 139
+
+commit fa0eb83df4eb79d0bb69e3141a3ae7e5c5c55b5b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 2 17:00:03 2012 +0200
+
+    [RigoDaemon] half the timer frequency and add some randomization in _auto_repositories_update()
+    
+    When sabayon-weekly is updated, the web service is hit by a huge amount of
+    requests. This commits add a bit more entropy on the execution of
+    _auto_repositories_update() (random between 30mins to 2 hours) and reduces
+    the timer frequency to 8hrs (from 4).
+
+commit c332d1a6f855abbd92fc631bbd7e03942e391ae1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 1 15:24:17 2012 +0200
+
+    Tagging Entropy version 138
+
 commit 3d923e07272bb3cd3efa8111ec7b19948ab99965
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Sat Sep 1 15:24:16 2012 +0200
