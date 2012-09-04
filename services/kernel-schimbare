@@ -123,7 +123,7 @@ def _get_opengl_impl():
     eselect_exec = "/usr/bin/eselect"
     sts = 1
     out = "xorg-x11"
-    if os.access(eselect_exec, os.X_OK) and not etpUi['pretend']:
+    if os.access(eselect_exec, os.X_OK) and not etpUi['simuleaza']:
         sts, xout = entropy.tools.getstatusoutput("%s opengl show" % (
             eselect_exec,))
         if sts == 0:
@@ -137,10 +137,10 @@ def _set_opengl_impl(opengl):
         subprocess.call(args)
 
 def _show_kernel_warnings(kernel_atom):
-    print_info("%s %s" % (purple(kernel_atom), teal(_("has been installed."))))
-    print_warning("%s: %s" % (red(_("Attention")),
-        brown(_("some external drivers cannot work across multiple kernels."))))
-    print_warning(darkgreen(_("Please reboot your computer now !")))
+    print_info("%s %s" % (purple(kernel_atom), teal(_("a fost instalat."))))
+    print_warning("%s: %s" % (red(_("Atentie")),
+        brown(_("unele drivere externe nu pot functiona pe mai multe kerneluri."))))
+    print_warning(darkgreen(_("Va rugam restartati calculatorul acum!")))
 
 def _switch_kernel(nsargs):
 
@@ -153,19 +153,19 @@ def _switch_kernel(nsargs):
         etp_client = Client()
         acquired = entropy.tools.acquire_entropy_locks(etp_client)
         if not acquired:
-            print_error(brown(_("Another Entropy is currently running.")))
+            print_error(brown(_("Un alt Entropy deja ruleaza.")))
             return 1
 
         pkg_id, pkg_repo = etp_client.atom_match(kernel_package)
         if pkg_id == -1:
-            print_error("%s: %s" % (brown(_("Package does not exist")),
+            print_error("%s: %s" % (brown(_("Pachetul nu exista")),
                 teal(kernel_package),))
             return 1
         kernel_matches, rc = _get_kernels(etp_client)
 
         kernel_match = (pkg_id, pkg_repo)
         if kernel_match not in kernel_matches:
-            print_error("%s: %s" % (brown(_("Not a kernel")),
+            print_error("%s: %s" % (brown(_("Nu e un kernel")),
                 teal(kernel_package),))
             return 1
 
@@ -197,9 +197,9 @@ def _switch_kernel(nsargs):
                     latest_kernel = _pkg_ids[0]
             if latest_kernel == -1:
                 print_error(
-                    brown(_("Cannot find your currently running kernel.")))
+                    brown(_("Nu poate fi gasit kernelul actual.")))
                 print_error(
-                    brown(_("Try without --from-running.")))
+                    brown(_("Incercati fara --din-rulare.")))
                 return 1
 
         if latest_kernel == -1:
@@ -234,7 +234,7 @@ def _switch_kernel(nsargs):
             atomsdata = matches,
             check_critical_updates = False
         )
-        if (rc == 0) and (not etpUi['pretend']):
+        if (rc == 0) and (not etpUi['simuleaza']):
             _set_opengl_impl(opengl)
             if target_tag:
                 # if target_tag is None, we are unable to set the symlink
@@ -247,7 +247,7 @@ def _switch_kernel(nsargs):
             _show_kernel_warnings(kernel_atom)
             # if we get here, then the kernel was installed
             global CHANGED
-            #CHANGED = True # legacy switcher, use kernel-schimbare for this
+            CHANGED = True
         return rc
 
     finally:
@@ -263,11 +263,11 @@ def _list_kernels(nsargs):
         etp_client = Client()
         acquired = entropy.tools.acquire_entropy_locks(etp_client)
         if not acquired:
-            print_error(brown(_("Another Entropy is currently running.")))
+            print_error(brown(_("Un alt Entropy deja ruleaza.")))
             return 1
         matches, rc = _get_kernels(etp_client)
         if (rc != 0) or (not matches):
-            print_warning(_("No kernel packages found"))
+            print_warning(_("Nu au fost gasite pachete kernel"))
             return 1
 
         key_sorter = lambda x: \
@@ -276,7 +276,7 @@ def _list_kernels(nsargs):
             repo = etp_client.open_repository(pkg_repo)
             print_package_info(pkg_id, etp_client, repo,
                 show_repo_if_quiet = True, extended = etpUi['verbose'],
-                quiet = etpUi['quiet'])
+                quiet = etpUi['mut'])
 
         return 0
     finally:
@@ -287,55 +287,55 @@ def _list_kernels(nsargs):
 
 # Rogentos tweaks
 def postinstall():
-    print "Rogentos: installing grub artwork..."
+    print "Rogentos: se instaleaza grub artwork..."
     subprocess.call("equo install rogentos-artwork-grub", shell=True)
-    print "Rogentos: setting splash..."
+    print "Rogentos: cateva setari..."
     for i in xrange(1, 7):
         subprocess.call("splash_manager -c set -t rogentos --tty=%d" % i, shell=True)
-    print "Rogentos: ready."
+    print "Rogentos: gata."
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description=_("Sabayon Kernel Switcher"),
+        description=_("Rogentos Kernel Schimbare"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         prog=APP_NAME)
 
     def _add_standard_args(_parser, restricted):
-        _parser.add_argument("--quiet", "-q", action="store_true",
+        _parser.add_argument("--mut", "-m", action="store_true",
                             default=False,
-                            help=_("quiet mode"))
+                            help=_("modul mut"))
         if not restricted:
-            _parser.add_argument("--ask", "-a", action="store_true",
+            _parser.add_argument("--intreaba", "-i", action="store_true",
                                  default=False,
-                                 help=_("ask confirmation"))
-            _parser.add_argument("--pretend", "-p", action="store_true",
+                                 help=_("confirma"))
+            _parser.add_argument("--simuleaza", "-s", action="store_true",
                                  default=False,
-                                 help=_("just show what would be done"))
+                                 help=_("doar arata ce va fi facut"))
 
     subparsers = parser.add_subparsers(
-        title="kernel-switcher",
-        description=_("available commands"))
+        title="kernel-schimbare",
+        description=_("comenzi disponibile"))
 
     switch_parser = subparsers.add_parser(
-        "switch", help=_("install a new or just another kernel"))
+        "schimba", help=_("instaleaza unul nou sau doar alt kernel"))
     switch_parser.set_defaults(func=_switch_kernel)
     switch_parser.add_argument(
-        "--from-running", action="store_true",
+        "--din-rulare", action="store_true",
         default=False,
-        help=_("use 'uname -r' to determine the running kernel"))
+        help=_("foloseste 'uname -r' pentru a determina kernelul curent"))
     switch_parser.add_argument(
         "kernel", metavar="<kernel>",
-        help=_("the new kernel package dependency name"))
+        help=_("numele noului kernel"))
     _add_standard_args(switch_parser, False)
 
     list_parser = subparsers.add_parser(
-        "list", help=_("list kernels"))
+        "listeaza", help=_("listeaza kernelurile"))
     list_parser.set_defaults(func=_list_kernels)
     _add_standard_args(list_parser, True)
 
     help_parser = subparsers.add_parser(
-        "help", help=_("this help"))
+        "ajutor", help=_("acest text"))
     def _print_help(*args):
         parser.print_help()
     help_parser.set_defaults(func=_print_help)
@@ -346,9 +346,9 @@ if __name__ == "__main__":
         parser.print_help()
         raise SystemExit(1)
 
-    etpUi['ask'] = getattr(nsargs, "ask", etpUi['ask'])
-    etpUi['quiet'] = getattr(nsargs, "quiet", etpUi['quiet'])
-    etpUi['pretend'] = getattr(nsargs, "pretend", etpUi['pretend'])
+    etpUi['intreaba'] = getattr(nsargs, "intreaba", etpUi['intreaba'])
+    etpUi['mut'] = getattr(nsargs, "mut", etpUi['mut'])
+    etpUi['simuleaza'] = getattr(nsargs, "simuleaza", etpUi['simuleaza'])
 
     try:
         rc = nsargs.func(nsargs)
