@@ -1,3 +1,250 @@
+commit a27d922cb4a31e774b12092bc304a7bd02076837
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 30 21:53:40 2012 +0200
+
+    Release Entropy 145
+
+commit 398379294f7f6762779f6885e6e08785fba37444
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 30 21:33:09 2012 +0200
+
+    [entropy.{spm,client}] fix content generation for injected packages
+    
+    Since Entropy Client migration to file iterator-based content metadata,
+    such information became unavailable to Entropy SPM's add_installed_package().
+    In the Portage SPM plugin implementation, such method was responsible of
+    reconstructing the XPAK CONTENTS file if missing. Injected packages are actually
+    missing that file (because it does not get created through "emerge -B").
+    The net result is that Portage vdb metadata for Entropy injected packages was
+    incomplete.
+
+commit 8f04abbc634a26fe0c969b10653b73ddf18c012f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Sep 21 16:45:55 2012 +0200
+
+    Tagging Entropy version 144
+
+commit 34f3e248d2a4a0d83758ef21e390ceed28de1f22
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Sep 21 16:45:54 2012 +0200
+
+    Release Entropy 144
+
+commit 523d9783a659251679577afba04fb5e8fb35096f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Sep 21 15:31:09 2012 +0200
+
+    [entropy.client.dep] force critical updates to be always pulled in. Avoids the Glibc effect
+
+commit 21e2251008dd8be22bbcd2e786e9836e90e68221
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Sep 21 14:57:48 2012 +0200
+
+    [entropy.server.mirrors] tidy_mirrors: make sure to clean the upload/ directory as well
+
+commit 4812e3365d2656a76395b3a429d4aeaeb524f923
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 17:17:36 2012 +0200
+
+    [conf] add dl.sabayon.org to repository mirrors
+
+commit 6ebc7eac0a57784db1053d8649e9b231fce6119e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 13:01:38 2012 +0200
+
+    [client] update entropy.pot
+
+commit 505f664055ad699f7cdcdd5e84f50ca047b3cd36
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 13:01:20 2012 +0200
+
+    [entropy.client.db] fix typo in message string
+
+commit c3e8a370e8404b1762b21503f988d9cb6e4a53d7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 12:58:57 2012 +0200
+
+    [client] update entropy.pot
+
+commit 050e700dcf5a875fa2877bef27063cf9d9df1ba6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 12:55:34 2012 +0200
+
+    [entropy.client.db] fallback to package URLs if the repository database URL is broken.
+    
+    This commit introduces the ability for Entropy Client to fall back to
+    package URLs if the repository database URL is not responding as expected
+    (tested at the application level).
+    This improves fault-tolerance greatly.
+
+commit 4b0e7ee7d379caba8593b5d529d093151029643d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 12:53:49 2012 +0200
+
+    [entropy.tools] introduce expand_plain_database_mirror()
+    
+    This follows the previously introduced expand_plain_package_mirror()
+    method. Now both methods can expand repository and package mirror URLs
+    read from Entropy repository configuration files adding product, arch
+    and branch information.
+
+commit 7cff01bbd5b42e27c96aa9604633e062f7c718d0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 12:52:36 2012 +0200
+
+    [entropy.const] export "database" sub-directory constant through etpConst
+
+commit 0a3a330b62a5a4db929f263b294c02ed1451e46d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 20 11:41:32 2012 +0200
+
+    [todo] update TODO
+
+commit 2a6ceaae35707ae490c3a7520c480b1458b5a6a4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Sep 19 22:13:30 2012 +0200
+
+    [services] entropy-pkgdelta-generator: do not generate .edelta for files smaller than 1Mb
+
+commit 3eb70a3d4778895ad228b03acfc49a562de67188
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Sep 19 16:47:25 2012 +0200
+
+    [conf] drop aarnet.edu mirror, dead
+
+commit 66ef85769ec5dd18ba36a404295cfbd78a9d4c2b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Sep 19 16:10:07 2012 +0200
+
+    [conf] add mirror.de.sabayon.org to mirror list
+
+commit 6b04512a91e0de4240fe746c2d8cd9f6fe1d80ee
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Sep 17 12:41:58 2012 +0200
+
+    Tagging Entropy version 143
+
+commit fa006188f195173a3ef3387d92251a21db0cd38c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Sep 17 12:41:56 2012 +0200
+
+    Release Entropy 143
+
+commit 68ae30e5ba10dc67f5c16877cd8d14a55f0df641
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Sep 17 12:40:46 2012 +0200
+
+    [Rigo] fix infinite loop in _vanished_callback()
+
+commit 544fe8a0e3f22cf516af134c4f74720fd53bf776
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 16 11:57:24 2012 +0200
+
+    [client] update entropy.pot
+
+commit a64379330676d62f1686993b191a08a203ce7a5c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 16 11:55:53 2012 +0200
+
+    [client] update translations
+
+commit e2a075cd33b6b66a9fb918a653282eb1b0462668
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 16 07:39:13 2012 +0200
+
+    [services] entropy-pkgdelta-generator: wrap md5sum() around IOError try/except
+
+commit d3a1701c671d7533aebd41194bb7ad97230e530a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 16 07:28:31 2012 +0200
+
+    [services] update repository-webinstall-generator-executor
+
+commit 58f1682c41e34260a10e23642e5f83b53a2c8726
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 15 12:50:53 2012 +0200
+
+    [entropy.misc] drop EntropyGeoIP, no longer used
+
+commit e04138541b6b0a741df9ad1ac09265f3afa6d123
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 9 18:41:48 2012 +0200
+
+    [todo] update TODO
+
+commit 70a4e6493a94ecd2657bf549c46f3427bd92ebf6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 9 18:07:22 2012 +0200
+
+    Tagging Entropy version 142
+
+commit 724a4d7e8797b5a9a804711351e3d161b1e39d4b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 9 18:07:21 2012 +0200
+
+    Release Entropy 142
+
+commit 3ee803c2ba32702c3476b517f8df4c4aa5f578d4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 9 18:04:52 2012 +0200
+
+    [entropy.const] implement a debug watchdog thread dumper thread.
+    
+    If ETP_DEBUG_WATCHDOG env variable is set, entropy.const will create
+    a timer thread that prints to stderr the full application thread dump.
+    This is quite useful in case of hard to reproduce deadlocks at the library
+    level.
+
+commit b25e2b8f03f9fec101a01f72b48b7a1ee804e4e5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Sep 9 17:31:47 2012 +0200
+
+    [entropy.cache] replace fork() usage with multithreading.
+    
+    Mixing multiprocessing with multithreading is bad and we all know that.
+    However, in this specific case there was nothing wrong in running tiny
+    functions in another process.
+    It seems that entropy.dump.dumpobj() is efficient enough nowadays to
+    have it running in the same process anyway.
+
+commit 446432c64de934e29b233e01ea5222b3a8a12a59
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 8 16:57:08 2012 +0200
+
+    [entropy.const] do not alter etpConst['systemroot'] variable
+
+commit c39bec886b400d6dc5695403e8d135125eb8d363
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 8 16:56:44 2012 +0200
+
+    [tests] fix Entropy Client tests (add affected_infofiles metadata)
+
+commit 627af78498402db1eb66f58107fcae8eae10f6e3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 8 16:34:05 2012 +0200
+
+    [entropy.const] move Entropy Resources Lock path to /var/lib/entropy
+    
+    This commit moves the Entropy Resources Lock from:
+    > /var/lib/entropy/client/database/<arch>/.using_resources
+    to a simpler:
+    > /var/lib/entropy/.using_resources
+    
+    The main reason for the move is to make such path more consistent across
+    architectures.
+
+commit ab9e3e9791b1c3fca93c51ec47f773675c1879d8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Sep 8 16:28:31 2012 +0200
+
+    [entropy.const] remove hardcoded slashes, rewrite paths using os.path.join()
+
+commit ceedf8d16105b9b5ad95d9749b1df700e6bfaa70
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Sep 6 20:04:43 2012 +0200
+
+    Tagging Entropy version 141
+
 commit 5c1f8d9b94c70b97cbdb7daa773fbbc6329d643a
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Thu Sep 6 20:04:42 2012 +0200
