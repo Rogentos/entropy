@@ -17,12 +17,12 @@ os.environ['ETP_GETTEXT_DOMAIN'] = "entropy-server"
 os.environ['ETP_NONITERACTIVE'] = "1"
 
 # Entropy imports
-sys.path.insert(0,'/usr/lib/entropy/lib')
-sys.path.insert(0,'/usr/lib/entropy/server')
-sys.path.insert(0,'/usr/lib/entropy/client')
-sys.path.insert(0,'../lib')
-sys.path.insert(0,'../server')
-sys.path.insert(0,'../client')
+sys.path.insert(0, '/usr/lib/entropy/lib')
+sys.path.insert(0, '/usr/lib/entropy/server')
+sys.path.insert(0, '/usr/lib/entropy/client')
+sys.path.insert(0, '../lib')
+sys.path.insert(0, '../server')
+sys.path.insert(0, '../client')
 
 # Entropy imports
 from entropy.exceptions import PermissionDenied
@@ -77,16 +77,16 @@ def exec_cmd(args, env = None):
                 os.execvpe(args[0], args, env)
             else:
                 os.execvp(args[0], args)
-        except Exception as exc:
+        except Exception:
             entropy.tools.print_traceback()
             os._exit(1)
     else:
         try:
-            rcpid, rc = os.waitpid(pid, os.P_WAIT)
+            _rcpid, exit_st = os.waitpid(pid, os.P_WAIT)
         except KeyboardInterrupt:
-            rc = 1
+            exit_st = 1
             os.kill(pid, signal.SIGTERM)
-        return rc
+        return exit_st
 
 def mkstemp():
     """
@@ -104,6 +104,7 @@ def mkstemp():
         const_setup_perms(tmp_dir, etpConst['entropygid'],
             recursion = False)
     return tempfile.mkstemp(prefix="matter", dir=tmp_dir)
+
 
 class EntropyResourceLock(object):
     """
@@ -152,6 +153,7 @@ class EntropyResourceLock(object):
         self.__inside_with_stmt -= 1
         if self.__inside_with_stmt < 1:
             self.release()
+
 
 class MatterResourceLock(object):
     """
@@ -221,6 +223,7 @@ class MatterResourceLock(object):
         if self.__inside_with_stmt < 1:
             self.release()
 
+
 class GenericSpecFunctions(object):
 
     def ne_string(self, x):
@@ -239,7 +242,7 @@ class GenericSpecFunctions(object):
             return False
         return True
 
-    def always_valid(self, *args):
+    def always_valid(self, *_args):
         return True
 
     def valid_path(self, x):
@@ -294,14 +297,19 @@ class GenericSpecFunctions(object):
             return False
         return True
 
-    def valid_comma_sep_list(self, x):
-        return [y.strip() for y in \
-            const_convert_to_unicode(x).split(",") if y.strip()]
+    def valid_comma_sep_list_list(self, input_str):
+        parts = []
+        for part in const_convert_to_unicode(input_str).split(","):
+            part = part.strip()
+            # do not filter out empty elements
+            parts.append(part.split())
+        return parts
 
     def valid_path_list(self, x):
         return [y.strip() for y in \
             const_convert_to_unicode(x).split(",") if \
                 self.valid_path_string(y) and y.strip()]
+
 
 class MatterSpec(GenericSpecFunctions):
 
@@ -387,7 +395,8 @@ class MatterSpec(GenericSpecFunctions):
             },
             'packages': {
                 'cb': self.always_valid,
-                've': self.valid_comma_sep_list,
+                've': self.valid_comma_sep_list_list,
+                'mod': lambda l_l: [x for x in l_l if x],
             },
             'repository': {
                 'cb': self.ne_string,
@@ -517,6 +526,13 @@ class SpecParser:
         return key, value
 
     def parse(self):
+
+        def _is_list_list(lst):
+            for x in lst:
+                if isinstance(x, list):
+                    return True
+            return False
+
         mydict = {}
         data = self._generic_parser()
         # compact lines properly
@@ -541,9 +557,21 @@ class SpecParser:
             value = check_dict['ve'](value)
             if not check_dict['cb'](value):
                 continue
+
             if key in mydict:
+
                 if isinstance(value, const_get_stringtype()):
                     mydict[key] += " %s" % (value,)
+
+                elif isinstance(value, list) and _is_list_list(value):
+                    # support multi-line "," separators
+                    # append the first element of value to the last
+                    # element of mydict[key] if it's there.
+                    first_el = value.pop(0)
+                    if mydict[key] and first_el:
+                        mydict[key][-1] += first_el
+                    mydict[key] += value
+
                 elif isinstance(value, list):
                     mydict[key] += value
                 else:
@@ -552,6 +580,7 @@ class SpecParser:
                 mydict[key] = value
         self._validate_parse(mydict)
         self._extend_parse(mydict)
+        self._mod_parse(mydict)
         return mydict.copy()
 
     def _extend_parse(self, mydata):
@@ -562,6 +591,15 @@ class SpecParser:
         for statement, opts in self._parser_data_path.items():
             if "default" in opts and (statement not in mydata):
                 mydata[statement] = opts['default']
+
+    def _mod_parse(self, mydata):
+        """
+        For parser data exposing a mod, execute the mod against
+        the data itself.
+        """
+        for statement, opts in self._parser_data_path.items():
+            if statement in mydata and "mod" in opts:
+                mydata[statement] = opts['mod'](mydata[statement])
 
     def _validate_parse(self, mydata):
         for param in self.vital_parameters:
@@ -604,11 +642,11 @@ class PackageBuilder(object):
 
     PORTAGE_BUILTIN_ARGS = ["--accept-properties=-interactive"]
 
-    def __init__(self, entropy_server, emerge_config, package, params,
+    def __init__(self, entropy_server, emerge_config, packages, params,
         spec_number, tot_spec, pkg_number, tot_pkgs):
         self._entropy = entropy_server
         self._emerge_config = emerge_config
-        self._package = package
+        self._packages = packages
         self._params = params
         self._spec_number = spec_number
         self._tot_spec = tot_spec
@@ -695,12 +733,15 @@ class PackageBuilder(object):
         """
         header = self._build_execution_header_output()
         print_info(
-            header + "spawning package build: %s" % (self._package,))
+            header + "spawning package build: %s" % (
+                " ".join(self._packages),))
 
         std_env = PackageBuilder._build_standard_environment(
             repository=self._params["repository"])
-        std_env["MATTER_PACKAGE_NAME"] = self._package
-        print_info("MATTER_PACKAGE_NAME = %s" % (self._package,))
+
+        matter_package_names = " ".join(self._packages)
+        std_env["MATTER_PACKAGE_NAMES"] = matter_package_names
+        print_info("MATTER_PACKAGE_NAMES = %s" % (matter_package_names,))
 
         # run pkgpre, if any
         pkgpre = self._params["pkgpre"]
@@ -720,7 +761,7 @@ class PackageBuilder(object):
                 os.remove(tmp_path)
 
         dirs_cleanup = []
-        exit_st = self._run_builder(std_env, dirs_cleanup)
+        exit_st = self._run_builder(dirs_cleanup)
 
         print_info("builder terminated, exit status: %d" % (exit_st,))
 
@@ -753,63 +794,42 @@ class PackageBuilder(object):
             and (not os.path.islink(tmp_dir)):
             shutil.rmtree(tmp_dir, True)
 
-    def _run_builder(self, env, dirs_cleanup_queue):
+    def _pre_graph_filters(self, package, portdb, vardb):
         """
-        This method is called by _run and executes the whole package build
-        logic, including constraints validation given by argv parameters.
-        NOTE: negative errors indicate warnings that can be skipped.
+        Execute basic, pre-graph generation (dependencies calculation)
+        filters against the package dependency to see if it's eligible
+        for the graph.
         """
-        log_dir = tempfile.mkdtemp(prefix="matter_build.",
-            suffix="." + self._package.replace("/", "_").lstrip("<>=~"))
-        dirs_cleanup_queue.append(log_dir)
+        allow_rebuild = self._params['rebuild'] == "yes"
+        allow_not_installed = self._params['not-installed'] == "yes"
+        allow_downgrade = self._params['downgrade'] == "yes"
 
-        emerge_settings, emerge_trees, mtimedb = self._emerge_config
-        settings = portage.config(clone=emerge_settings)
-
-        portdb = emerge_trees[settings["ROOT"]]["porttree"].dbapi
-        if not portdb.frozen:
-            portdb.freeze()
-        vardb = emerge_trees[settings["ROOT"]]["vartree"].dbapi
-        vardb.settings.unlock()
-        vardb.settings["PORT_LOGDIR"] = log_dir
-        vardb.settings.backup_changes("PORT_LOGDIR")
-        vardb.settings.lock()
-
-        fakedb = portage.fakedbapi(settings=settings)
-
-        # Load the most current variables from /etc/profile.env, which
-        # has been re-generated by the env-update call in _run()
-        settings.unlock()
-        settings.reload()
-        settings.regenerate()
-        settings.lock()
-
-        best_visible = portdb.xmatch("bestmatch-visible", self._package)
+        best_visible = portdb.xmatch("bestmatch-visible", package)
         if not best_visible:
             # package not found, return error
-            print_error("cannot match: %s, aborting" % (self._package,))
-            self._not_found_packages.append(self._package)
-            return 1
+            print_error("cannot match: %s, ignoring this one" % (package,))
+            self._not_found_packages.append(package)
+            return None
 
-        allow_not_installed = self._params['not-installed'] == "yes"
-        print_info("matched: %s for %s" % (best_visible, self._package,))
+        print_info("matched: %s for %s" % (best_visible, package,))
         # now determine what's the installed version.
-        best_installed = portage.best(vardb.match(self._package))
+        best_installed = portage.best(vardb.match(package))
         if (not best_installed) and (not allow_not_installed):
             # package not installed
-            print_error("package not installed: %s, aborting" % (
-                self._package,))
-            self._not_installed_packages.append(self._package)
-            return 1
-        if (not best_installed) and (allow_not_installed):
+            print_error("package not installed: %s, ignoring this one" % (
+                package,))
+            self._not_installed_packages.append(package)
+            return None
+
+        if (not best_installed) and allow_not_installed:
             print_warning(
-                "package not installed: %s, but not-installed: yes provided" % (
-                    self._package,))
+                "package not installed: "
+                "%s, but 'not-installed: yes' provided" % (package,))
 
         cmp_res = -1
         if best_installed:
-            print_info("found installed: %s for %s" % (best_installed,
-                self._package,))
+            print_info("found installed: %s for %s" % (
+                    best_installed, package,))
             # now compare
             # -1 if best_installed is older than best_visible
             # 1 if best_installed is newer than best_visible
@@ -818,69 +838,39 @@ class PackageBuilder(object):
                 portage.versions.pkgsplit(best_installed),
                 portage.versions.pkgsplit(best_visible))
 
-        allow_rebuild = self._params['rebuild'] == "yes"
-        allow_downgrade = self._params['downgrade'] == "yes"
         is_rebuild = cmp_res == 0
 
         if (cmp_res == 1) and (not allow_downgrade):
             # downgrade in action and downgrade not allowed, aborting!
             print_warning(
-                "package: %s, would be downgraded from %s to %s, aborting" % (
-                    self._package, best_installed, best_visible,))
-            return 0
+                "package: %s, would be downgraded, %s to %s, ignoring" % (
+                    package, best_installed, best_visible,))
+            return None
 
-        if (is_rebuild) and (not allow_rebuild):
+        if is_rebuild and (not allow_rebuild):
             # rebuild in action and rebuild not allowed, aborting!
             print_warning(
-                "package: %s, would be rebuilt to %s, aborting" % (
-                    self._package, best_visible,))
-            return 0
+                "package: %s, would be rebuilt to %s, ignoring" % (
+                    package, best_visible,))
+            return None
 
-        # at this point we can go ahead building self._package
-        print_info("starting to build: %s, to %s" % (self._package,
-            best_visible,))
+        # at this point we can go ahead accepting package in queue
+        print_info("package: %s [%s], accepted in queue" % (
+                best_visible, package,))
+        return best_visible
 
-        if not getcolor():
-            portage.output.nocolor()
-
-        # non interactive properties, this is not really required
-        # accept-properties just sets os.environ...
-        builtin_args = PackageBuilder.PORTAGE_BUILTIN_ARGS
-        myaction, myopts, myfiles = parse_opts(
-            PackageBuilder.PORTAGE_BUILD_ARGS + builtin_args + \
-                ["="+best_visible])
-        if "--pretend" in myopts:
-            print_warning("cannot use --pretend emerge argument, you idiot")
-            del myopts["--pretend"]
-        if "--ask" in myopts:
-            print_warning("cannot use --ask emerge argument, you idiot")
-            del myopts["--ask"]
-        spinner = stdout_spinner()
-        if "--quiet" in myopts:
-            spinner.update = spinner.update_basic
-        elif "--nospinner" in myopts:
-            spinner.update = spinner.update_basic
-        if settings.get("TERM") == "dumb" or not is_stdout_a_tty():
-            spinner.update = spinner.update_basic
-
-        print_info("emerge args: %s" % (" ".join(sorted(myopts.keys())),))
-
-        params = create_depgraph_params(myopts, myaction)
-        success, graph, favorites = backtrack_depgraph(settings,
-            emerge_trees, myopts, params, myaction, myfiles, spinner)
-
-        if not success:
-            # print issues to stdout and give up
-            print_warning("dependencies calculation failed for %s, aborting" % (
-                best_visible,))
-            graph.display_problems()
-            return 0
-        print_info("dependency graph generated successfully")
-
+    def _post_graph_filters(self, graph, vardb, portdb):
+        """
+        Execute post-graph generation (dependencies calculation)
+        filters against the package dependencies to see if they're
+        eligible for building.
+        """
         # list of _emerge.Package.Package objects
         package_queue = graph.altlist()
+
         # filter out blockers
-        real_queue = [x for x in package_queue if not isinstance(x, Blocker)]
+        real_queue = [x for x in package_queue if not isinstance(
+                x, Blocker)]
         # filter out broken or corrupted objects
         real_queue = [x for x in real_queue if x.cpv]
 
@@ -899,20 +889,19 @@ class PackageBuilder(object):
             if cpv:
                 dep_list.append(cpv+repo)
             else:
-                print_warning("attention, %s has broken cpv: '%s', ignoring" % (
+                print_warning(
+                    "attention, %s has broken cpv: '%s', ignoring" % (
                         pobj, cpv,))
 
         # calculate dependencies, if --dependencies is not enabled
         # because we have to validate it
         if (self._params['dependencies'] == "no") \
                 and (len(package_queue) > 1):
-            # package is pulling in dependencies, but --dependencies is not
-            # enabled. need to give up
-            deps = ", ".join(dep_list)
-            print_warning(
-                "package %s is pulling in: %s, but --dependencies "
-                "not specified, aborting" % (best_visible, deps,))
-            return 0
+            deps = "\n  ".join(dep_list)
+            print_warning("dependencies pulled in:")
+            print_warning(deps)
+            print_warning("but 'dependencies: no' in config, aborting")
+            return None
 
         # inspect use flags changes
         allow_new_useflags = self._params['new-useflags'] == "yes"
@@ -936,19 +925,24 @@ class PackageBuilder(object):
                 removed_flags = installed_flags - enabled_flags
 
                 if (not allow_new_useflags) and new_flags:
-                    print_warning("ouch: %s wants these new USE flags: %s" % (
-                        pkg.cpv+"::"+pkg.repo, " ".join(sorted(new_flags)),))
+                    print_warning(
+                        "ouch: %s wants these new USE flags: %s" % (
+                            pkg.cpv+"::"+pkg.repo,
+                            " ".join(sorted(new_flags)),))
                     use_flags_give_up = True
                 if (not allow_removed_useflags) and removed_flags:
-                    print_warning("ouch: %s has these USE flags removed: %s" % (
-                        pkg.cpv+"::"+pkg.repo,
+                    print_warning(
+                        "ouch: %s has these USE flags removed: %s" % (
+                            pkg.cpv+"::"+pkg.repo,
                         " ".join(sorted(removed_flags)),))
                     use_flags_give_up = True
 
         if use_flags_give_up:
-            print_warning("cannot continue due to unmet USE flags constraint")
-            return 0
+            print_warning("cannot continue due to unmet "
+                          "USE flags constraint")
+            return None
 
+        allow_downgrade = self._params['downgrade'] == "yes"
         # check the whole queue against downgrade directive
         if not allow_downgrade:
             allow_downgrade_give_ups = []
@@ -967,22 +961,22 @@ class PackageBuilder(object):
 
             if allow_downgrade_give_ups:
                 print_warning(
-                    "cannot continue due to package downgrade not allowed for:")
+                    "cannot continue due to package "
+                    "downgrade not allowed for:")
                 for inst_atom, avail_atom in allow_downgrade_give_ups:
                     print_warning("  installed: %s | wanted: %s" % (
                         inst_atom, avail_atom,))
-                return 0
+                return None
 
         changing_repo_pkgs = []
         for pkg in real_queue:
             wanted_repo = pkg.repo
-            pkg_slot = pkg.slot_atom
-            inst_atom = portage.best(vardb.match(pkg_slot))
+            inst_atom = portage.best(vardb.match(pkg.slot_atom))
             current_repo = vardb.aux_get(inst_atom, ["repository"])[0]
             if current_repo:
                 if current_repo != wanted_repo:
                     changing_repo_pkgs.append(
-                        (pkg.cpv, pkg_slot, current_repo, wanted_repo))
+                        (pkg.cpv, pkg.slot, current_repo, wanted_repo))
 
         if changing_repo_pkgs:
             print_warning("")
@@ -993,12 +987,15 @@ class PackageBuilder(object):
                     c_repo, w_repo,))
             print_warning("")
 
-        allow_spm_repo_change = self._params['spm-repository-change'] == "yes"
-        allow_spm_repo_change_if_upstreamed = \
+        allow_spm_repo_change = self._params['spm-repository-change'] \
+            == "yes"
+        allow_spm_repo_change_if_ups = \
             self._params['spm-repository-change-if-upstreamed'] == "yes"
-        if (not allow_spm_repo_change) and allow_spm_repo_change_if_upstreamed:
+
+        if (not allow_spm_repo_change) and allow_spm_repo_change_if_ups:
             print_info("SPM repository change allowed if the original "
-                       "repository does no longer contain current packages.")
+                       "repository does no longer contain "
+                       "current packages.")
 
             # check if source repository still contains the package
             # in this case, set allow_spm_repo_change to True
@@ -1024,10 +1021,112 @@ class PackageBuilder(object):
 
         if changing_repo_pkgs and (not allow_spm_repo_change):
             print_warning(
-                "cannot continue due to unmet SPM repository change constraint")
+                "cannot continue due to unmet SPM repository "
+                "change constraint")
+            return None
+
+        print_info("USE flags constraints are met for all "
+                   "the queued packages")
+        return dep_list, real_queue
+
+    def _run_builder(self, dirs_cleanup_queue):
+        """
+        This method is called by _run and executes the whole package build
+        logic, including constraints validation given by argv parameters.
+        NOTE: negative errors indicate warnings that can be skipped.
+        """
+        if self._packages:
+            first_package = self._packages[0]
+        else:
+            first_package = "_empty_"
+
+        log_dir = tempfile.mkdtemp(prefix="matter_build.",
+            suffix="." + first_package.replace("/", "_").lstrip("<>=~"))
+        dirs_cleanup_queue.append(log_dir)
+
+        emerge_settings, emerge_trees, mtimedb = self._emerge_config
+        settings = portage.config(clone=emerge_settings)
+
+        portdb = emerge_trees[settings["ROOT"]]["porttree"].dbapi
+        if not portdb.frozen:
+            portdb.freeze()
+        vardb = emerge_trees[settings["ROOT"]]["vartree"].dbapi
+        vardb.settings.unlock()
+        vardb.settings["PORT_LOGDIR"] = log_dir
+        vardb.settings.backup_changes("PORT_LOGDIR")
+        vardb.settings.lock()
+
+        # Load the most current variables from /etc/profile.env, which
+        # has been re-generated by the env-update call in _run()
+        settings.unlock()
+        settings.reload()
+        settings.regenerate()
+        settings.lock()
+
+        packages = []
+        # execute basic, pre-graph generation filters against each
+        # package dependency in self._packages.
+        # This is just fast pruning of obvious obviousness.
+        for package in self._packages:
+            best_visible = self._pre_graph_filters(
+                package, portdb, vardb)
+            if best_visible is not None:
+                packages.append((package, best_visible))
+
+        if not packages:
+            print_warning("No remaining packages in queue, aborting.")
             return 0
 
-        print_info("USE flags constraints are met for all the queued packages")
+        # at this point we can go ahead building packages
+        print_info("starting to build:")
+        for package, best_visible in packages:
+            print_info(": %s -> %s" % (
+                    package, best_visible,))
+
+        if not getcolor():
+            portage.output.nocolor()
+
+        # non interactive properties, this is not really required
+        # accept-properties just sets os.environ...
+        build_args = []
+        build_args += PackageBuilder.PORTAGE_BUILD_ARGS
+        build_args += PackageBuilder.PORTAGE_BUILTIN_ARGS
+        build_args += ["=" + best_v for _x, best_v in packages]
+        myaction, myopts, myfiles = parse_opts(build_args)
+
+        if "--pretend" in myopts:
+            print_warning("cannot use --pretend emerge argument, you idiot")
+            del myopts["--pretend"]
+        if "--ask" in myopts:
+            print_warning("cannot use --ask emerge argument, you idiot")
+            del myopts["--ask"]
+        spinner = stdout_spinner()
+        if "--quiet" in myopts:
+            spinner.update = spinner.update_basic
+        elif "--nospinner" in myopts:
+            spinner.update = spinner.update_basic
+        if settings.get("TERM") == "dumb" or not is_stdout_a_tty():
+            spinner.update = spinner.update_basic
+
+        print_info("emerge args: %s" % (" ".join(build_args),))
+
+        params = create_depgraph_params(myopts, myaction)
+        success, graph, favorites = backtrack_depgraph(settings,
+            emerge_trees, myopts, params, myaction, myfiles, spinner)
+
+        if not success:
+            # print issues to stdout and give up
+            print_warning("dependencies calculation failed, aborting")
+            graph.display_problems()
+            return 0
+        print_info("dependency graph generated successfully")
+
+        f_data = self._post_graph_filters(graph, vardb, portdb)
+        if f_data is None:
+            # post-graph filters not passed, giving up
+            return 0
+        dep_list, real_queue = f_data
+
         print_info("about to build the following packages:")
         for dep in dep_list:
             print_info("  %s" % (dep,))
@@ -1046,7 +1145,7 @@ class PackageBuilder(object):
         failed_package = None
         if retval != 0:
             merge_list = mtimedb.get("resume", {}).get("mergelist")
-            for merge_type, merge_root, merge_atom, merge_act in merge_list:
+            for _merge_type, _merge_root, merge_atom, _merge_act in merge_list:
                 if failed_package is None:
                     # we consider the first encountered package the one
                     # that failed. It makes sense since packages are built
@@ -1080,7 +1179,7 @@ class PackageBuilder(object):
 
             std_env = PackageBuilder._build_standard_environment(
                 repository=self._params["repository"])
-            std_env["MATTER_PACKAGE_NAME"] = self._package
+            std_env["MATTER_PACKAGE_NAMES"] = " ".join(self._packages)
             std_env["MATTER_PORTAGE_FAILED_PACKAGE_NAME"] = failed_package.cpv
             std_env["MATTER_PORTAGE_REPOSITORY"] = failed_package.repo
             # call pkgfail hook if defined
@@ -1114,10 +1213,10 @@ class PackageBuilder(object):
         if "yes" == emerge_settings.get("AUTOCLEAN"):
             print_info("executing post-build operations, please wait...")
             builtin_args = PackageBuilder.PORTAGE_BUILTIN_ARGS
-            myaction, myopts, myfiles = parse_opts(
+            _action, opts, _files = parse_opts(
                 PackageBuilder.PORTAGE_BUILD_ARGS + builtin_args)
             unmerge(emerge_trees[emerge_settings["ROOT"]]["root_config"],
-                myopts, "clean", [], mtimedb["ldpath"], autoclean=1)
+                opts, "clean", [], mtimedb["ldpath"], autoclean=1)
 
     @staticmethod
     def sync():
@@ -1126,9 +1225,9 @@ class PackageBuilder(object):
         """
         sync_cmd = PackageBuilder.PORTAGE_SYNC_CMD
         std_env = PackageBuilder._build_standard_environment()
-        rc = exec_cmd(sync_cmd, env = std_env)
-        if rc != 0:
-            return rc
+        exit_st = exec_cmd(sync_cmd, env = std_env)
+        if exit_st != 0:
+            return exit_st
 
         # overlays update
         overlay_cmd = PackageBuilder.OVERLAYS_SYNC_CMD
@@ -1147,7 +1246,7 @@ class PackageBuilder(object):
         @return: True, if preserved libraries are found
         @rtype: bool
         """
-        emerge_settings, emerge_trees, mtimedb = emerge_config
+        emerge_settings, emerge_trees, _mtimedb = emerge_config
         vardb = emerge_trees[emerge_settings["ROOT"]]["vartree"].dbapi
         vardb._plib_registry.load()
         return vardb._plib_registry.hasEntries()
@@ -1259,19 +1358,18 @@ class PackageBuilder(object):
         """
         Push staged packages in repository to online Entropy mirrors.
         """
-        rc = PackageBuilder._push_packages(entropy_server, repository)
-        if rc != 0:
-            return rc
-        rc = PackageBuilder._push_repository(entropy_server, repository)
-        return rc
+        exit_st = PackageBuilder._push_packages(entropy_server, repository)
+        if exit_st != 0:
+            return exit_st
+        return PackageBuilder._push_repository(entropy_server, repository)
 
     @staticmethod
     def _push_packages(entropy_server, repository):
         """
         Upload newly built packages.
         """
-        mirrors_tainted, mirrors_errors, successfull_mirrors, \
-            broken_mirrors, check_data = \
+        _mirrors_tainted, mirrors_errors, successfull_mirrors, \
+            _broken_mirrors, _check_data = \
                 entropy_server.Mirrors.sync_packages(
                     repository, ask = False, pretend = False)
         if mirrors_errors and not successfull_mirrors:
@@ -1304,7 +1402,7 @@ def matter_main(entropy_server, nsargs, cwd, specs):
 
     if nsargs.gentle:
         # check if there is something to do
-        to_be_added, to_be_removed, to_be_injected = \
+        to_be_added, _to_be_removed, _to_be_injected = \
             entropy_server.scan_package_changes()
         if to_be_added: # only check this, others we can ignore
             to_be_added = [x[0] for x in to_be_added]
@@ -1326,16 +1424,16 @@ def matter_main(entropy_server, nsargs, cwd, specs):
 
     # setup
     if nsargs.pre:
-        rc = PackageBuilder.setup(nsargs.pre, cwd)
-        if rc != 0:
-            exit_st = rc
+        _rc = PackageBuilder.setup(nsargs.pre, cwd)
+        if _rc != 0:
+            exit_st = _rc
 
     if exit_st == 0:
 
         if nsargs.sync:
-            rc = PackageBuilder.sync()
-            if rc != 0:
-                exit_st = rc
+            _rc = PackageBuilder.sync()
+            if _rc != 0:
+                exit_st = _rc
 
         if exit_st == 0:
             completed = []
@@ -1346,20 +1444,21 @@ def matter_main(entropy_server, nsargs, cwd, specs):
             preserved_libs_error = False
             spec_count = 0
             tot_spec = len(specs)
+
             for spec in specs:
 
                 spec_count += 1
                 keep_going = spec["keep-going"] == "yes"
                 local_completed = []
 
-                pkg_count = 0
                 tot_pkgs = len(spec['packages'])
-                for package in spec['packages']:
-                    pkg_count += 1
+                for pkg_count, packages in enumerate(spec['packages'], 1):
+
                     builder = PackageBuilder(entropy_server, emerge_config,
-                        package, spec, spec_count, tot_spec, pkg_count,
+                        packages, spec, spec_count, tot_spec, pkg_count,
                         tot_pkgs)
-                    rc = builder.run()
+                    _rc = builder.run()
+
                     not_found.extend(builder.get_not_found_packages())
                     not_installed.extend(
                         builder.get_not_installed_packages())
@@ -1367,6 +1466,7 @@ def matter_main(entropy_server, nsargs, cwd, specs):
                         builder.get_not_merged_packages())
                     preserved_libs = \
                         PackageBuilder.check_preserved_libraries(emerge_config)
+
                     if preserved_libs:
                         preserved_libs_error = True
                         if not nsargs.disable_preserved_libs:
@@ -1376,7 +1476,7 @@ def matter_main(entropy_server, nsargs, cwd, specs):
                                 "preserved libraries detected, aborting")
                             break
 
-                    # ignore rc, we may have built pkgs even if rc != 0
+                    # ignore _rc, we may have built pkgs even if _rc != 0
                     built_packages = builder.get_built_packages()
                     if built_packages:
                         print_info("built packages, in queue: %s" % (
@@ -1388,11 +1488,11 @@ def matter_main(entropy_server, nsargs, cwd, specs):
 
                     # make some room
                     print_info("")
-                    if rc < 0:
+                    if _rc < 0:
                         # ignore warning and go ahead
                         continue
                     else:
-                        exit_st = rc
+                        exit_st = _rc
                         if not keep_going:
                             break
 
@@ -1410,10 +1510,11 @@ def matter_main(entropy_server, nsargs, cwd, specs):
                 os.chdir(cwd)
 
                 if local_completed and nsargs.commit:
-                    rc = PackageBuilder.commit(entropy_server,
+                    _rc = PackageBuilder.commit(
+                        entropy_server,
                         spec['repository'], local_completed)
-                    if exit_st == 0 and rc != 0:
-                        exit_st = rc
+                    if exit_st == 0 and _rc != 0:
+                        exit_st = _rc
                         if not keep_going:
                             break
 
@@ -1423,10 +1524,10 @@ def matter_main(entropy_server, nsargs, cwd, specs):
                     print_warning("Preserved libraries detected, cannot push !")
                 elif not preserved_libs_error:
                     for repository in tainted_repositories:
-                        rc = PackageBuilder.push(
+                        _rc = PackageBuilder.push(
                             entropy_server, repository)
-                        if exit_st == 0 and rc != 0:
-                            exit_st = rc
+                        if exit_st == 0 and _rc != 0:
+                            exit_st = _rc
 
             # print summary
             print_info("")
@@ -1444,16 +1545,19 @@ def matter_main(entropy_server, nsargs, cwd, specs):
             print_info("")
 
     if nsargs.post:
-        rc = PackageBuilder.teardown(nsargs.post, cwd,
+        _rc = PackageBuilder.teardown(nsargs.post, cwd,
             exit_st)
-        if exit_st == 0 and rc != 0:
-            exit_st = rc
+        if exit_st == 0 and _rc != 0:
+            exit_st = _rc
 
     raise SystemExit(exit_st)
 
-if __name__ == "__main__":
 
-    ENV_VARS_HELP = """\
+def main():
+    """
+    Main App.
+    """
+    _env_vars_help = """\
 
 Environment variables for Package Builder module:
 %s       =  repository identifier
@@ -1483,7 +1587,7 @@ Matter Resources Lock file you can use to detect if matter is running:
 
     parser = argparse.ArgumentParser(
         description='Automated Packages Builder',
-        epilog=ENV_VARS_HELP,
+        epilog=_env_vars_help,
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # * instead of + in order to support --sync only tasks
@@ -1598,3 +1702,7 @@ Matter Resources Lock file you can use to detect if matter is running:
     print_warning("")
     print_warning("Tasks complete, exit status: %d" % (exit_st,))
     raise SystemExit(exit_st)
+
+
+if __name__ == "__main__":
+    main()
