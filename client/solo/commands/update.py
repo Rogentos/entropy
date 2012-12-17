@@ -118,6 +118,7 @@ Update Entropy Repositories.
         """
         Execute update through RigoDaemon.
         """
+
         info_txt = \
             _("Sending the update request to Entropy Services")
         info_txt2 = _("Repositories will be updated in background")
@@ -178,15 +179,23 @@ Update Entropy Repositories.
             return 1
 
         if _entropy_dbus_object is not None:
+
+            repos = self._repositories[:]
+            settings = entropy_client.Settings()
+            if not repos:
+                repos = list(settings['repositories']['available'].keys())
+
             iface = dbus.Interface(_entropy_dbus_object,
                 dbus_interface = "org.sabayon.Rigo")
             accepted = False
             try:
-                accepted = iface.update_repositories(
-                    self._repositories, self._force)
+                if self._repositories:
+                    accepted = iface.update_repositories(
+                        repos, self._force)
             except dbus.exceptions.DBusException as err:
                 bail_out(err)
                 return 1
+
             if accepted:
                 info_txt = _("Have a nice day")
                 entropy_client.output(
