@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import argparse
+import cgi
 import functools
 import sys
 import os
@@ -20,7 +21,8 @@ sys.path.insert(0, '../client')
 
 # Entropy imports
 from entropy.output import print_info, print_error, print_warning, \
-    print_generic
+    print_generic, is_stdout_a_tty, nocolor, darkgreen, teal, \
+    purple, brown
 
 # Portage imports
 os.environ['ACCEPT_PROPERTIES'] = "* -interactive"
@@ -60,11 +62,17 @@ class AntiMatterPackage(object):
         self._available = available
         self._status = status
 
+    def key(self):
+        """
+        Return the package key:slot string.
+        """
+        return self.target().cp
+
     def slot(self):
         """
         Return the package slot.
         """
-        return self._installed.slot
+        return self.target().slot
 
     def keyslot(self):
         """
@@ -122,20 +130,17 @@ class BaseAntiMatterResult(object):
     method.
     """
 
-    def __init__(self, result, quiet, verbose):
+    def __init__(self, result, nsargs):
         """
         Constructor.
 
         @param result: list of AntiMatterPackage objects
         @type result: list
-        @param quiet: quiet output enabled (print one item per line)
-        @type quiet: bool
-        @param verbose: verbose output enabled (print the full version)
-        @type verbose: bool
+        @param nsargs: ArgumentParser namespace object
+        @type nsargs: argparse.Namespace
         """
         self._result = result
-        self._quiet = quiet
-        self._verbose = verbose
+        self._nsargs = nsargs
 
     def notify(self):
         """
@@ -152,34 +157,131 @@ class StdoutAntiMatterResult(BaseAntiMatterResult):
     to stdout.
     """
 
-    def __init__(self, result, quiet, verbose):
+    def __init__(self, result, nsargs):
         """
         Constructor.
 
         @param result: list of AntiMatterPackage objects
         @type result: list
-        @param quiet: quiet output enabled
-        @type quiet: bool
-        @param verbose: verbose output enabled
-        @type verbose: bool
+        @param nsargs: ArgumentParser namespace object
+        @type nsargs: argparse.Namespace
         """
         super(StdoutAntiMatterResult, self).__init__(
-            result, quiet, verbose)
+            result, nsargs)
 
     def notify(self):
         """
         Overridden from BaseAntiMatterResult
         """
         for package in self._result:
-            if self._verbose:
-                target = package.target()
-            else:
-                target = package.keyslot()
 
-            if self._quiet:
-                print_generic(target)
+            if self._nsargs.extended:
+                cp = package.key()
+                slot = package.slot()
+
+                from_ver = "x"
+                inst = package.installed()
+                if inst is not None:
+                    from_ver = inst.version
+
+                to_ver = "x"
+                avail = package.available()
+                if avail is not None:
+                    to_ver = avail.version
+
+                name = "%s:%s  [%s->%s]" % (
+                    darkgreen(cp),
+                    brown(slot),
+                    teal(from_ver),
+                    purple(to_ver))
+
+            elif self._nsargs.verbose:
+                name = package.target()
             else:
-                print_info(target)
+                name = package.keyslot()
+
+            if self._nsargs.quiet:
+                print_generic(name)
+            else:
+                print_info(name)
+
+
+class HtmlAntiMatterResult(BaseAntiMatterResult):
+    """
+    BaseAntiMatterResult subclass that prints the results
+    to stdout in HTML format.
+    """
+
+    def __init__(self, result, nsargs):
+        """
+        Constructor.
+
+        @param result: list of AntiMatterPackage objects
+        @type result: list
+        @param nsargs: ArgumentParser namespace object
+        @type nsargs: argparse.Namespace
+        """
+        super(HtmlAntiMatterResult, self).__init__(
+            result, nsargs)
+
+    def notify(self):
+        """
+        Overridden from BaseAntiMatterResult
+        """
+        txt = "<h3>" + str(len(self._result)) + " packages are %s</h3>"
+        if self._nsargs.extinguished:
+            txt = txt % ("extinguished",)
+        elif self._nsargs.upgrade:
+            txt = txt % ("upgradable",)
+        elif self._nsargs.downgrade:
+            txt = txt % ("downgradable",)
+        elif self._nsargs.new:
+            txt = txt % ("new",)
+        print_generic(txt)
+
+        print_generic("<ul class='result'>")
+        for package in self._result:
+
+            if self._nsargs.extended:
+                cp = package.key()
+                slot = package.slot()
+
+                from_ver = "x"
+                inst = package.installed()
+                if inst is not None:
+                    from_ver = cgi.escape(inst.version)
+
+                to_ver = "x"
+                avail = package.available()
+                if avail is not None:
+                    to_ver = cgi.escape(avail.version)
+
+                name = """\
+  <li>
+  <span class='rt'>%s:%s</span>
+  &nbsp;&nbsp;
+  [<span class='rd'>
+    <span class='frompkg'>%s</span>
+    %s
+    <span class='topkg'>%s</span>
+  </span>]
+  </li>""" % (
+                    cgi.escape(cp),
+                    cgi.escape(slot),
+                    cgi.escape(from_ver),
+                    cgi.escape("->"),
+                    cgi.escape(to_ver))
+
+            elif self._nsargs.verbose:
+                name = "<li class='rt'>%s</li>" % (
+                    cgi.escape(package.target()),)
+            else:
+                name = "<li class='rt'>%s</li>" % (
+                    cgi.escape(package.keyslot()),)
+
+            print_generic(name)
+
+        print_generic("</ul>")
 
 
 class AntiMatter(object):
@@ -356,11 +458,18 @@ class AntiMatter(object):
                     functools.partial(_regex_filter, regex),
                     result))
 
-        return StdoutAntiMatterResult(
-            result, self._nsargs.quiet, self._nsargs.verbose)
+        klass = StdoutAntiMatterResult
+        if self._nsargs.html:
+            klass = HtmlAntiMatterResult
+
+        return klass(result, self._nsargs)
 
 
 if __name__ == "__main__":
+
+    # disable color if standard output is not a TTY
+    if not is_stdout_a_tty():
+        nocolor()
 
     parser = argparse.ArgumentParser(
         description='Automated package updates scanner',
@@ -368,8 +477,12 @@ if __name__ == "__main__":
 
     parser.add_argument("--verbose", "-v", action="store_true",
                         default=False, help="verbose output")
+    parser.add_argument("--extended", "-x", action="store_true",
+                        default=False, help="extended output")
     parser.add_argument("--quiet", "-q", action="store_true",
                         default=False, help="quiet output")
+    parser.add_argument("--html", "-t", action="store_true",
+                        default=False, help="prints in html format")
 
     parser.add_argument("--filter", "-f", dest="filters",
                         action="append", default=[],
