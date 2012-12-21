@@ -1,3 +1,129 @@
+commit 51f80944ff5d9cad935354d6ae795abb46379ef7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 21 00:54:31 2012 +0100
+
+    Release Entropy 158
+
+commit f9c96661588faa6dd1b18b6f63ea5b93d2001467
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 21 00:45:45 2012 +0100
+
+    [entropy.output] drop old cruft
+
+commit ef679bf2e79c7a68b52ee5acec73e0a8e56d2a63
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 21 00:45:23 2012 +0100
+
+    [server] update POTFILES.in
+
+commit cd12e89f84a6adf1ab7e581ba850f4a7b51e2874
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 21 00:44:04 2012 +0100
+
+    [matter] split and clean matter, make the Entropy dependency optional
+
+commit dad36a9a80fbfec6242bd82f234f9d462dc458a8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 20 21:41:20 2012 +0100
+
+    [antimatter] rename antimatter to antimatter.py
+
+commit ff029d38177031091da828a433d1d4c57dad0a51
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 20 21:40:49 2012 +0100
+
+    [matter] rename matter to matter.py
+
+commit e4ef3979a2950ce2a49bf0b418c056c68c39f10f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 20 10:01:56 2012 +0100
+
+    [matter] add "stable" parameter support to particles
+
+commit e17928e4bf7d85074d2ecff9592ab472221c41cc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 20 09:13:19 2012 +0100
+
+    [matter] use subprocess.call() instead of a custom os.spawnvpe()
+
+commit 44ad78e33b3147fd9a71034343abd1d9c414b2b4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Dec 18 19:58:31 2012 +0100
+
+    Tagging Entropy version 157
+
+commit ce64433a6c76330d1748e51adf4244d9ecc8d375
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Dec 18 19:58:31 2012 +0100
+
+    Release Entropy 157
+
+commit d5b46cda2b7d85d639300363fe0c8f06bd37393c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Dec 18 09:08:32 2012 +0100
+
+    [antimatter] properly format title for new packages as well
+
+commit b8affca48bfcea81530813e7967ba5bdb4007089
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Dec 18 08:50:46 2012 +0100
+
+    [antimatter] rework BaseAntiMatterResult parameters, extend the HtmlAntiMatterResult class
+
+commit e1107512c3bdee5a11b94e93d64d2678f011d6b3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Dec 18 00:27:19 2012 +0100
+
+    [antimatter] use <ul> and <li> instead of <dl> and friends
+
+commit 83c3c143d80f966f2a6da083af0556a53b8738a1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Dec 17 23:38:01 2012 +0100
+
+    [antimatter] implement html output through a --html switch
+
+commit 3ebdc3302b706130946603ebf515d4d8a3b51b94
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Dec 17 23:37:20 2012 +0100
+
+    [antimatter] use target() object for key() and slot()
+
+commit ac28e25e3e74aa8b428c5d0519fbc5324eabe316
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Dec 17 22:18:16 2012 +0100
+
+    [antimatter] add --extended switch, and colorize output a bit
+
+commit ec4c84294f2cb51f281950f1038264abbf9543cb
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Dec 17 00:32:27 2012 +0100
+
+    [Rigo] add download/disk size info in the search element list, fixes bug 3852
+
+commit c5249488a61052d6214a87c39c478e57b6cc2c01
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Dec 16 22:12:39 2012 +0100
+
+    [equo] fix "equo update" through dbus, properly populate the repositories list
+
+commit 6553cd398f6068e79da13a19ffb001bf1c40a5ec
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Dec 16 20:04:22 2012 +0100
+
+    [entropy.fetchers] catch socket.error exception (can be raised with "Connection reset by peer")
+
+commit 2113b201ad623990137f4f97ccbbc8aa405f076f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Dec 16 19:59:56 2012 +0100
+
+    [equo] do not allow update through dbus if no repo is configured
+
+commit 57333299f871c9f852311b3d08d804164bec55b0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Dec 16 19:17:10 2012 +0100
+
+    Tagging Entropy version 156
+
 commit f4aef3c97d51e622f0e2567678db007dd850e5b2
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Sun Dec 16 19:17:10 2012 +0100
