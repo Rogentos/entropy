@@ -19,6 +19,11 @@ from matter.utils import mkstemp, mkdtemp, print_traceback
 from matter.output import is_stdout_a_tty, print_info, print_warning, \
     print_error, getcolor, darkgreen, purple
 
+# default mandatory features
+os.environ['ACCEPT_PROPERTIES'] = "* -interactive"
+os.environ['FEATURES'] = "split-log"
+os.environ['CMAKE_NO_COLOR'] = "yes"
+
 from _emerge.depgraph import backtrack_depgraph
 from _emerge.actions import load_emerge_config
 try:
@@ -91,7 +96,7 @@ class PackageBuilder(object):
         subprocess.call(["env-update"])
 
         hook_name = executable_hook_f.name
-        if not hook_name.endswith("/"):
+        if not hook_name.startswith("/"):
             # complete with current directory
             hook_name = os.path.join(cwd, hook_name)
 
@@ -102,7 +107,7 @@ class PackageBuilder(object):
     @classmethod
     def teardown(cls, executable_hook_f, cwd, exit_st):
         hook_name = executable_hook_f.name
-        if not hook_name.endswith("/"):
+        if not hook_name.startswith("/"):
             # complete with current directory
             hook_name = os.path.join(cwd, hook_name)
 
