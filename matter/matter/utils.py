@@ -31,6 +31,68 @@ def print_traceback(f = None):
     traceback.print_exc(file = f)
 
 
+def print_exception(silent=False, tb_data=None, all_frame_data=False):
+    """
+    Print last Python exception and frame variables values (if available)
+    to stdout.
+
+    @keyword silent: do not print to stdout
+    @type silent: bool
+    @keyword tb_data: Python traceback object
+    @type tb_data: Python traceback instance
+    @keyword all_frame_data: print all variables in every frame
+    @type all_frame_data: bool
+    @return: exception data
+    @rtype: list of strings
+    """
+    if not silent:
+        traceback.print_last()
+    data = []
+    if tb_data is not None:
+        tb = tb_data
+    else:
+        last_type, last_value, last_traceback = sys.exc_info()
+        tb = last_traceback
+
+    stack = []
+    while True:
+        if not tb:
+            break
+        if not tb.tb_next:
+            break
+        tb = tb.tb_next
+        if all_frame_data:
+            stack.append(tb.tb_frame)
+
+    if not all_frame_data:
+        stack.append(tb.tb_frame)
+
+    #if not returndata: print
+    for frame in stack:
+        if not silent:
+            sys.stderr.write("\n")
+            sys.stderr.write(
+                "Frame %s in %s at line %s\n" % (
+                    frame.f_code.co_name,
+                    frame.f_code.co_filename, frame.f_lineno))
+        data.append("Frame %s in %s at line %s\n" % (frame.f_code.co_name,
+            frame.f_code.co_filename, frame.f_lineno))
+
+        for key, value in list(frame.f_locals.items()):
+            cur_str = ''
+            cur_str = "\t%20s = " % key
+            try:
+                cur_str += repr(value) + "\n"
+            except (AttributeError, NameError, TypeError):
+                cur_str += "<ERROR WHILE PRINTING VALUE>\n"
+
+            if not silent:
+                sys.stdout.write(cur_str)
+            data.append(cur_str)
+
+    return data
+
+
 def mkstemp(prefix=None, suffix=None):
     """
     Create temporary file into matter temporary directory.
