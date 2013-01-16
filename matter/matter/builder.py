@@ -17,7 +17,7 @@ import tempfile
 
 from matter.utils import mkstemp, mkdtemp, print_traceback
 from matter.output import is_stdout_a_tty, print_info, print_warning, \
-    print_error, getcolor, darkgreen, purple
+    print_error, getcolor, darkgreen, purple, brown
 
 # default mandatory features
 os.environ['ACCEPT_PROPERTIES'] = "* -interactive"
@@ -25,7 +25,6 @@ os.environ['FEATURES'] = "split-log"
 os.environ['CMAKE_NO_COLOR'] = "yes"
 
 from _emerge.depgraph import backtrack_depgraph
-from _emerge.actions import load_emerge_config
 try:
     from _emerge.actions import validate_ebuild_environment
 except ImportError:
@@ -70,7 +69,7 @@ class PackageBuilder(object):
     PORTAGE_BUILTIN_ARGS = ["--accept-properties=-interactive"]
 
     def __init__(self, emerge_config, packages, params,
-        spec_number, tot_spec, pkg_number, tot_pkgs):
+        spec_number, tot_spec, pkg_number, tot_pkgs, pretend):
         self._emerge_config = emerge_config
         self._packages = packages
         self._params = params
@@ -78,6 +77,7 @@ class PackageBuilder(object):
         self._tot_spec = tot_spec
         self._pkg_number = pkg_number
         self._tot_pkgs = tot_pkgs
+        self._pretend = pretend
         self._built_packages = []
         self._uninstalled_packages = []
         self._not_found_packages = []
@@ -123,11 +123,12 @@ class PackageBuilder(object):
         """
         Return a string used as stdout/stderr header text.
         """
-        my_str = "{%s of %s particles | %s of %s packages} " % (
+        my_str = "{%s of %s particles | %s of %s packages | %s} " % (
             darkgreen(str(self._spec_number)),
             purple(str(self._tot_spec)),
             darkgreen(str(self._pkg_number)),
-            purple(str(self._tot_pkgs)),)
+            purple(str(self._tot_pkgs)),
+            brown(self._params["__name__"]),)  # file name
         return my_str
 
     def get_built_packages(self):
@@ -365,6 +366,16 @@ class PackageBuilder(object):
             print_warning("but 'dependencies: no' in config, aborting")
             return None
 
+        # protect against unwanted package unmerges
+        if self._params['unmerge'] == "no":
+            unmerges = [x for x in real_queue if x.operation == "uninstall"]
+            if unmerges:
+                deps = "\n  ".join([x.cpv for x in unmerges])
+                print_warning("found package unmerges:")
+                print_warning(deps)
+                print_warning("but 'unmerge: no' in config, aborting")
+                return None
+
         # inspect use flags changes
         allow_new_useflags = self._params['new-useflags'] == "yes"
         allow_removed_useflags = \
@@ -491,35 +502,32 @@ class PackageBuilder(object):
                    "the queued packages")
         return real_queue
 
-    def _setup_keywords(self, settings):
+    def _setup_keywords(self, portdb, settings):
         """
         Setup ACCEPT_KEYWORDS for package.
         """
         # setup stable keywords if needed
         force_stable_keywords = self._params["stable"] == "yes"
         inherit_keywords = self._params["stable"] == "inherit"
-
-        settings.unlock()
         arch = settings["ARCH"][:]
-        orig_key = "ACCEPT_KEYWORDS_MATTER"
-        orig_keywords = settings.get(orig_key)
 
-        if orig_keywords is None:
-            orig_keywords = settings["ACCEPT_KEYWORDS"][:]
-            settings[orig_key] = orig_keywords
-            settings.backup_changes(orig_key)
+        # reset match cache, or the new keywords setting
+        # won't be considered
+        portdb.melt()  # this unfreezes and clears xcache
 
+        keywords = None
         if force_stable_keywords:
-            keywords = "%s -~%s" % (arch, arch)
+            keywords = "%s" % (arch,)
         elif inherit_keywords:
-            keywords = orig_keywords
+            pass # don't do anything
         else:
             keywords = "%s ~%s" % (arch, arch)
 
-        settings.unlock()
-        settings["ACCEPT_KEYWORDS"] = keywords
-        settings.backup_changes("ACCEPT_KEYWORDS")
-        settings.lock()
+        if keywords is not None:
+            settings.unlock()
+            # do not backup.
+            settings["ACCEPT_KEYWORDS"] = keywords
+            settings.lock()
 
     def _run_builder(self, dirs_cleanup_queue):
         """
@@ -538,16 +546,25 @@ class PackageBuilder(object):
 
         emerge_settings, emerge_trees, mtimedb = self._emerge_config
 
+        # reset settings to original state, variables will be reconfigured
+        # while others may remain saved due to backup_changes().
+        # This is needed for _setup_keywords() to function properly.
+        emerge_settings.unlock()
+        emerge_settings.reset()
+        emerge_settings.lock()
+
         # Setup stable/unstable keywords, must be done on
         # emerge_settings bacause the reference is spread everywhere
         # in emerge_trees.
         # This is not thread-safe, but Portage isn't either, so
         # who cares!
-        self._setup_keywords(emerge_settings)
+        # ACCEPT_KEYWORDS is not saved and reset every time by the
+        # reset() call above.
+        portdb = emerge_trees[emerge_settings["ROOT"]]["porttree"].dbapi
+        self._setup_keywords(portdb, emerge_settings)
 
         settings = portage.config(clone=emerge_settings)
 
-        portdb = emerge_trees[settings["ROOT"]]["porttree"].dbapi
         if not portdb.frozen:
             portdb.freeze()
         vardb = emerge_trees[settings["ROOT"]]["vartree"].dbapi
@@ -614,9 +631,6 @@ class PackageBuilder(object):
         build_args += ["=" + best_v for _x, best_v in packages]
         myaction, myopts, myfiles = parse_opts(build_args)
 
-        if "--pretend" in myopts:
-            print_warning("cannot use --pretend emerge argument, you idiot")
-            del myopts["--pretend"]
         if "--ask" in myopts:
             print_warning("cannot use --ask emerge argument, you idiot")
             del myopts["--ask"]
@@ -656,6 +670,10 @@ class PackageBuilder(object):
             print_info("about to uninstall the following packages:")
             for pkg in unmerge_queue:
                 print_info("  %s" % (pkg.cpv,))
+
+        if self._pretend:
+            print_info("portage spawned with --pretend, done!")
+            return 0
 
         # re-calling action_build(), deps are re-calculated though
         validate_ebuild_environment(emerge_trees)

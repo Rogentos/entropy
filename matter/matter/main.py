@@ -54,7 +54,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
         binary_pms.validate_system()
     except BaseBinaryPMS.SystemValidationError as err:
         print_error("%s" % (err,))
-        raise SystemExit(1)
+        return 1
 
     print_info("matter loaded, starting to scan particles, pid: %s" % (
         os.getpid(),))
@@ -71,19 +71,20 @@ def matter_main(binary_pms, nsargs, cwd, specs):
     if nsargs.pre:
         _rc = PackageBuilder.setup(nsargs.pre, cwd)
         if _rc != 0:
-            raise SystemExit(_teardown(_rc))
+            return _teardown(_rc)
 
     # sync portage
     if nsargs.sync:
         _rc = PackageBuilder.sync()
         if _rc != 0 and not nsargs.sync_best_effort:
-            raise SystemExit(_teardown(_rc))
+            return _teardown(_rc)
 
     exit_st = 0
     completed = []
     not_found = []
     not_installed = []
     not_merged = []
+    uninstalled = []
     tainted_repositories = set()
     spec_count = 0
     tot_spec = len(specs)
@@ -101,7 +102,8 @@ def matter_main(binary_pms, nsargs, cwd, specs):
 
             builder = PackageBuilder(
                 emerge_config, packages,
-                spec, spec_count, tot_spec, pkg_count, tot_pkgs)
+                spec, spec_count, tot_spec, pkg_count, tot_pkgs,
+                nsargs.pretend)
             _rc = builder.run()
 
             not_found.extend(builder.get_not_found_packages())
@@ -109,6 +111,8 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 builder.get_not_installed_packages())
             not_merged.extend(
                 builder.get_not_merged_packages())
+            uninstalled.extend(
+                builder.get_uninstalled_packages())
             preserved_libs = binary_pms.check_preserved_libraries(
                 emerge_config)
 
@@ -182,11 +186,13 @@ def matter_main(binary_pms, nsargs, cwd, specs):
         "\n  ".join(sorted(not_found)),))
     print_info("Packages not installed:\n  %s" % (
         "\n  ".join(sorted(not_installed)),))
+    print_info("Packages uninstalled:\n  %s" % (
+        "\n  ".join(sorted(uninstalled)),))
     print_info("Preserved libs: %s" % (
         preserved_libs,))
     print_info("")
 
-    raise SystemExit(_teardown(exit_st))
+    return _teardown(exit_st)
 
 
 def main():
@@ -336,6 +342,12 @@ Available Binary PMSs:
         help="disable prerserved libraries check.",
         action="store_true")
 
+    parser.add_argument(
+        "--pretend",
+        dest="pretend", default=False,
+        help="show what would be done without alterint the current system.",
+        action="store_true")
+
     # extend parser arguments
     for k in avail_binpms:
         k.extend_parser(parser)
@@ -345,13 +357,13 @@ Available Binary PMSs:
     except IOError as err:
         if err.errno == errno.ENOENT:
             print_error(err.strerror + ": " + err.filename)
-            raise SystemExit(1)
+            return 1
         raise
 
     if os.getuid() != 0:
         # root access required
         print_error("superuser access required")
-        raise SystemExit(1)
+        return 1
 
     # parse spec files
     specs = []
@@ -363,7 +375,7 @@ Available Binary PMSs:
 
     if not specs:
         print_error("invalid spec files provided")
-        raise SystemExit(1)
+        return 1
 
     # O(n) determine what is the BinaryPMS to use
     klass = None
@@ -373,7 +385,7 @@ Available Binary PMSs:
             break
     if klass is None:
         print_error("invalid Binary PMS specified: %s" % (nsargs.pms,))
-        raise SystemExit(1)
+        return 1
 
     binary_pms = None
     exit_st = 0
@@ -384,7 +396,7 @@ Available Binary PMSs:
         except BaseBinaryPMS.BinaryPMSLoadError as err:
             # repository not available or not configured
             print_error("Cannot load Binary Package Manager: %s" % (err,))
-            raise SystemExit(3)
+            return 3
 
         print_info("Loaded Binary PMS: %s" % (klass.NAME,))
 
@@ -394,7 +406,7 @@ Available Binary PMSs:
                 binary_pms.validate_spec(spec)
             except BaseBinaryPMS.SpecParserError as err:
                 print_error("%s" % (err,))
-                raise SystemExit(1)
+                return 1
 
         if nsargs.blocking:
             print_info("--blocking enabled, please wait for locks...")
@@ -402,17 +414,17 @@ Available Binary PMSs:
         resource_lock = binary_pms.get_resource_lock(nsargs.blocking)
         with resource_lock:
             with MatterResourceLock(nsargs.blocking):
-                matter_main(binary_pms, nsargs, cwd, specs)
+                exit_st = matter_main(binary_pms, nsargs, cwd, specs)
 
     except BaseBinaryResourceLock.NotAcquired:
         print_error("unable to acquire PMS Resources lock")
-        raise SystemExit(42)
+        return 42
     except MatterResourceLock.NotAcquired:
         print_error("unable to acquire Matter Resources lock")
-        raise SystemExit(42)
+        return 42
     except KeyboardInterrupt:
         print_error("Keyboard Interrupt, pid: %s" % (os.getpid(),))
-        raise SystemExit(100)
+        return 42
     finally:
         if binary_pms is not None:
             binary_pms.shutdown()
@@ -420,4 +432,4 @@ Available Binary PMSs:
     print_warning("")
     print_warning("")
     print_warning("Tasks complete, exit status: %d" % (exit_st,))
-    raise SystemExit(exit_st)
+    return exit_st

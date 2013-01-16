@@ -192,6 +192,13 @@ class MatterSpec(GenericSpecFunctions):
                 'desc': "Allow soft-blockers in the merge queue?\n "
                 "Packages will be unmerged if yes. (yes/no)",
             },
+            'unmerge': {
+                'cb': self.valid_yes_no,
+                've': self.ve_string_stripper,
+                'default': "yes",
+                'desc': "Allow package unmerges due to Portage\n "
+                "soft-blockers resolution. (yes/no)",
+            },
             'pkgpre': {
                 'cb': self.not_none,
                 've': self.ve_string_open_file_read,
@@ -415,7 +422,10 @@ class SpecParser:
         self._validate_parse(mydict)
         self._extend_parse(mydict)
         self._mod_parse(mydict)
-        return mydict.copy()
+        data = mydict.copy()
+        # add file name if possible
+        data["__name__"] = self.file_object.name
+        return data
 
     def _extend_parse(self, mydata):
         """
