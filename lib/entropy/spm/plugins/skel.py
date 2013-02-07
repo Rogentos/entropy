@@ -13,16 +13,18 @@
 import os
 
 from entropy.const import etpConst, etpSys
+from entropy.exceptions import SPMError
 from entropy.core import Singleton
 from entropy.misc import LogFile
 from entropy.core.settings.base import SystemSettings
 
 import entropy.tools
 
+
 class SpmPlugin(Singleton):
     """Base class for Source Package Manager plugins"""
 
-    BASE_PLUGIN_API_VERSION = 9
+    BASE_PLUGIN_API_VERSION = 10
 
     # this must be reimplemented by subclasses and value
     # must match BASE_PLUGIN_API_VERSION
@@ -45,6 +47,42 @@ class SpmPlugin(Singleton):
     # directory during package install or removal, environment_update
     # is triggered
     ENV_DIRS = set()
+
+    class Error(SPMError):
+        """
+        Base class for Source Package Manager exceptions.
+        """
+
+    class PhaseFailure(SPMError):
+        """
+        Exception raised when Source Package Manager phase
+        execution fails with a return code != 0. These exceptions
+        should be considered non-fatal.
+        """
+
+        def __init__(self, message, code):
+            """
+            Constructor.
+
+            @param message: failure message
+            @type message: string
+            @param code: error code
+            @type code: int
+            """
+            super(SpmPlugin.PhaseFailure, self).__init__(message)
+            self.code = code
+            self.message = message
+
+    class PhaseError(Error):
+        """
+        Exception raised when executing a package phase.
+        """
+
+    class OutdatedPhaseError(PhaseError):
+        """
+        Exception raised when phase execution detected an outdated version
+        of the Source Package Manager.
+        """
 
     def init_singleton(self, output_interface):
         """
@@ -766,9 +804,13 @@ class SpmPlugin(Singleton):
         @param phase_name: name of the phase to call, must be a valid phase
             contained in package_phases() output.
         @type phase_name: string
-        @return: phase script exit status
-        @rtype: int
         @raise KeyError: if phase is not available
+        @raise SpmPlugin.PhaseFailure: when the phase executed but returned a
+            non-zero exit status. These exceptions should be considered
+            non-fatal
+        @raise SpmPlugin.PhaseError: when the phase cannot be executed
+        @raise SpmPlugin.OutdatedPhaseError: when Source Package Manager is
+            too old to execute the phase. This is a subclass of PhaseError
         """
         raise NotImplementedError()
 
