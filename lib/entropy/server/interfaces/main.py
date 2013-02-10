@@ -4076,7 +4076,95 @@ class Server(Client):
                             darkgreen(dependency),
                             header = "   - ")
 
+                if not missing:
+                    self.output(
+                        blue(_("No missing dependencies. Lucky bastard...")),
+                        importance = 1,
+                        level = "info",
+                        header = brown(" @@ ")
+                    )
+
         return missing_dependencies
+
+    def injected_library_dependencies_test(self, repository_ids):
+        """
+        Test repositories against missing library dependencies
+        for injected packages.
+        Injected packages are not actually tracking any specific
+        package on the system, thus they need particular attention
+        in terms of library-level dependencies.
+
+        @param repository_ids: ordered list of repository identifiers
+            to test, like the output of Server.repositories()
+        @type repository_ids: list
+        @return: list (set) of package matches with broken dependencies
+        @rtype: set
+        """
+        txt = "%s..." % (
+            teal(_("Calculating library dependencies of injected packages")),)
+        self.output(
+            txt,
+            importance = 2,
+            level = "info",
+            header = brown(" @@ ")
+        )
+
+        # this is the system-wide blacklist
+        blacklisted_deps = \
+            self._settings[Server.SYSTEM_SETTINGS_PLG_ID]['dep_blacklist']
+        blacklist = set()
+
+        injected = []
+        for repository_id in repository_ids:
+            repo = self.open_repository(repository_id)
+            repo_injected = repo.listAllInjectedPackageIds()
+            injected.extend(((x, repository_id) for x in repo_injected))
+
+            # this is the repository-specific blacklist. pack everything
+            # together
+            blacklist.update(self._get_missing_dependencies_blacklist(
+                    repository_id))
+
+        # reorder package matches per repository to speed up the
+        # generation of the per-package blacklist.
+        pkg_map = {}
+        for pkg_id, pkg_repo in injected:
+            obj = pkg_map.setdefault(pkg_repo, [])
+            obj.append(pkg_id)
+
+        # this is per-package dependency blacklist support
+        per_package_blacklist = set()
+        for repository_id, package_ids in pkg_map.items():
+            repo = self.open_repository(repository_id)
+
+            for pkg_dep, bl_pkg_deps in blacklisted_deps.items():
+                pkg_ids, rc = repo.atomMatch(pkg_dep, multiMatch = True)
+                for package_id in package_ids:
+                    if package_id in pkg_ids:
+                        per_package_blacklist.update(bl_pkg_deps)
+                        break
+
+        # merge with the rest of the metadata
+        blacklist |= per_package_blacklist
+
+        qa = self.QA()
+        missing_map = qa.test_missing_dependencies(
+            self, injected, blacklist = blacklist)
+        if missing_map:
+            self.output(
+                darkred(_("There are broken injected packages. Please fix.")),
+                importance = 2,
+                level = "error",
+                header = red(" @@ "))
+        else:
+            self.output(
+                blue(_("Injected packages are healthy. You lucky...")),
+                importance = 1,
+                level = "info",
+                header = brown(" @@ ")
+            )
+
+        return set(missing_map.keys())
 
     def extended_dependencies_test(self, repository_ids):
         """
@@ -4102,10 +4190,17 @@ class Server(Client):
             unsatisfied_deps |= self.dependencies_test(base_repository_id,
                 match_repo = [base_repository_id])
 
+        all_repositories = self.repositories()
         # test draining and merging as well, since we don't want
         # to get surprises when stuff is moved.
-        unsatisfied_deps |= self.drained_dependencies_test(
-            self.repositories())
+        unsatisfied_deps |= self.drained_dependencies_test(all_repositories)
+
+        # test library-level linking for injected packages as well.
+        injected_matches = self.injected_library_dependencies_test(
+            all_repositories)
+        for package_id, repository_id in injected_matches:
+            repo = self.open_repository(repository_id)
+            unsatisfied_deps.add(repo.retrieveAtom(package_id))
 
         return unsatisfied_deps
 
@@ -5534,9 +5629,12 @@ class Server(Client):
             pkg_blacklisted_deps |= repo_blacklist
 
             # missing dependencies check
+            target_matches = [(x, pkg_repo) for x in package_ids]
             missing_map = my_qa.test_missing_dependencies(
-                self, [(x, pkg_repo) for x in package_ids],
-                self_check = True, black_list = pkg_blacklisted_deps)
+                self, target_matches, blacklist = pkg_blacklisted_deps)
+            # also warn about potentially missing library deps
+            _broken_matches = my_qa.warn_missing_dependencies(
+                self, target_matches)
 
             missing_deps = self.__user_filter_out_missing_deps(pkg_repo,
                 dbconn, missing_map, ask)
