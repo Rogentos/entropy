@@ -12,8 +12,12 @@
     to Matter.
 
 """
+import errno
 import os
+import shutil
 import subprocess
+
+from matter.output import print_info, print_warning
 
 
 class BaseBinaryResourceLock(object):
@@ -117,8 +121,12 @@ class BaseBinaryPMS(object):
         """
         self._cwd = cwd
         self._nsargs = nsargs
+
         from _emerge.actions import load_emerge_config
         self._cfg_loader = load_emerge_config
+
+        from _emerge.main import parse_opts
+        self._parse_opts = parse_opts
 
     def _build_pkgdir(self, repository):
         """
@@ -197,11 +205,60 @@ class BaseBinaryPMS(object):
                     "preserved libraries are found on "
                     "the system, aborting.")
 
-    def commit(self, repository, packages):
+    def _commit_build_only(self, spec, packages):
         """
-        Commit packages to the BinaryPMS repository.
+        Commit packages that have been built with -B.
+        Just move the Portage generated tbz2s to our PKGDIR.
         """
+        repository = spec["repository"]
+        matter_pkgdir = self._build_pkgdir(repository)
+
+        print_info("committing build-only packages: %s, to PKGDIR: %s" % (
+            ", ".join(sorted(packages)), matter_pkgdir,))
+
+        settings, _trees, _db = self.load_emerge_config()
+        pkgdir = settings["PKGDIR"]
+
+        exit_st = 0
+        for package in packages:
+            tbz2_atom = package + ".tbz2"
+            source_path = os.path.join(pkgdir, tbz2_atom)
+            if not os.path.isfile(source_path):
+                print_warning(
+                    "cannot find package tarball: %s" % (source_path,))
+                exit_st = 1
+                continue
+
+            dest_path = os.path.join(matter_pkgdir, tbz2_atom)
+            dest_dir = os.path.dirname(dest_path)
+            try:
+                os.makedirs(dest_dir)
+            except OSError as err:
+                if err.errno != errno.EEXIST:
+                    raise
+
+            try:
+                shutil.move(source_path, dest_path)
+            except shutil.Error as err:
+                raise BaseBinaryPMS.RepositoryCommitError(
+                    "cannot commit packages, generic error: %s" % (
+                        repr(err),))
+            except (OSError, IOError) as err:
+                raise BaseBinaryPMS.RepositoryCommitError(
+                    "cannot commit packages, system error: %s" % (
+                        repr(err),))
+
+        return exit_st
+
+    def _commit(self, spec, packages):
+        """
+        Commit packages that have been merged into the system.
+        """
+        repository = spec["repository"]
         pkgdir = self._build_pkgdir(repository)
+        print_info("committing packages: %s, to PKGDIR: %s" % (
+            ", ".join(sorted(packages)), pkgdir,))
+
         env = os.environ.copy()
         env["PKGDIR"] = pkgdir
         exit_st = subprocess.call(
@@ -210,12 +267,23 @@ class BaseBinaryPMS(object):
         if exit_st != 0:
             raise BaseBinaryPMS.RepositoryCommitError(
                 "cannot commit packages, exit status: %d" % (
-                    exit_st,))
+                exit_st,))
+        return exit_st
+
+    def commit(self, spec, packages):
+        """
+        Commit packages to the BinaryPMS repository specified in the
+        Spec object.
+        """
+        build_only = spec["build-only"] == "yes"
+        if build_only:
+            return self._commit_build_only(spec, packages)
+        return self._commit(spec, packages)
 
     def push(self, repository):
         """
         Push all the packages built by PackageBuilder to the
-        given repository.
+        repository.
         """
         pkgpush_f = self._nsargs.portage_pkgpush
         if pkgpush_f is None:

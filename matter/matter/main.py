@@ -97,8 +97,8 @@ def matter_main(binary_pms, nsargs, cwd, specs):
         keep_going = spec["keep-going"] == "yes"
         local_completed = []
 
-        tot_pkgs = len(spec['packages'])
-        for pkg_count, packages in enumerate(spec['packages'], 1):
+        tot_pkgs = len(spec["packages"])
+        for pkg_count, packages in enumerate(spec["packages"], 1):
 
             builder = PackageBuilder(
                 emerge_config, packages,
@@ -131,7 +131,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 local_completed.extend(
                     [x for x in built_packages \
                          if x not in local_completed])
-                tainted_repositories.add(spec['repository'])
+                tainted_repositories.add(spec["repository"])
 
             # make some room
             print_info("")
@@ -145,7 +145,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
 
         # call post-build cleanup operations,
         # run it unconditionally
-        PackageBuilder.post_build(emerge_config)
+        PackageBuilder.post_build(spec, emerge_config)
 
         completed.extend([x for x in local_completed \
             if x not in completed])
@@ -158,7 +158,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
 
         if local_completed and nsargs.commit:
             _rc = binary_pms.commit(
-                spec['repository'],
+                spec,
                 local_completed)
             if exit_st == 0 and _rc != 0:
                 exit_st = _rc
@@ -229,7 +229,7 @@ def main():
     avail_binpms = BaseBinaryPMS.available_pms
 
     matter_spec = MatterSpec()
-    parser_data = matter_spec.parser_data_path()
+    parser_data = matter_spec.data()
     matter_spec_params = ""
     for spec_key in sorted(parser_data.keys()):
         par = parser_data[spec_key]
@@ -244,8 +244,6 @@ Environment variables for Package Builder module:
 %s    =  alternative command used to sync Portage
                               default: %s
 %s   =  alternative command used to sync Portage overlays
-                              default: %s
-%s  = custom emerge arguments
                               default: %s
 
 Environment variables passed to --post executables:
@@ -266,8 +264,6 @@ Available Binary PMSs:
         darkgreen(PackageBuilder.DEFAULT_PORTAGE_SYNC_CMD),
         purple("MATTER_OVERLAYS_SYNC_CMD"),
         darkgreen(PackageBuilder.DEFAULT_OVERLAYS_SYNC_CMD),
-        purple("MATTER_PORTAGE_BUILD_ARGS"),
-        darkgreen(PackageBuilder.DEFAULT_PORTAGE_BUILD_ARGS),
         purple("MATTER_EXIT_STATUS"),
         darkgreen(MatterResourceLock.LOCK_FILE_PATH),
         matter_spec_params,
@@ -276,13 +272,13 @@ Available Binary PMSs:
              for k in avail_binpms]),)
 
     parser = argparse.ArgumentParser(
-        description='Automated Packages Builder',
+        description="Automated Packages Builder",
         epilog=_env_vars_help,
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # * instead of + in order to support --sync only tasks
     parser.add_argument(
-        "spec", nargs='+', metavar="<spec>", type=file,
+        "spec", nargs="+", metavar="<spec>", type=file,
         help="matter spec file")
 
     default_pms = avail_binpms[0]

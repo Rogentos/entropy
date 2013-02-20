@@ -24,6 +24,7 @@ os.environ['ACCEPT_PROPERTIES'] = "* -interactive"
 os.environ['FEATURES'] = "split-log"
 os.environ['CMAKE_NO_COLOR'] = "yes"
 
+from _emerge.actions import adjust_configs, apply_priorities
 from _emerge.depgraph import backtrack_depgraph
 try:
     from _emerge.actions import validate_ebuild_environment
@@ -61,10 +62,6 @@ class PackageBuilder(object):
     DEFAULT_OVERLAYS_SYNC_CMD = "layman -S"
     OVERLAYS_SYNC_CMD = shlex.split(os.getenv("MATTER_OVERLAYS_SYNC_CMD",
         DEFAULT_OVERLAYS_SYNC_CMD))
-
-    DEFAULT_PORTAGE_BUILD_ARGS = "--verbose --nospinner"
-    PORTAGE_BUILD_ARGS = os.getenv("MATTER_PORTAGE_BUILD_ARGS",
-        DEFAULT_PORTAGE_BUILD_ARGS).split()
 
     PORTAGE_BUILTIN_ARGS = ["--accept-properties=-interactive"]
 
@@ -248,9 +245,9 @@ class PackageBuilder(object):
         filters against the package dependency to see if it's eligible
         for the graph.
         """
-        allow_rebuild = self._params['rebuild'] == "yes"
-        allow_not_installed = self._params['not-installed'] == "yes"
-        allow_downgrade = self._params['downgrade'] == "yes"
+        allow_rebuild = self._params["rebuild"] == "yes"
+        allow_not_installed = self._params["not-installed"] == "yes"
+        allow_downgrade = self._params["downgrade"] == "yes"
 
         try:
             best_visible = portdb.xmatch("bestmatch-visible", package)
@@ -321,7 +318,7 @@ class PackageBuilder(object):
         # list of _emerge.Package.Package objects
         package_queue = graph.altlist()
 
-        allow_soft_blocker = self._params['soft-blocker'] == "yes"
+        allow_soft_blocker = self._params["soft-blocker"] == "yes"
         if not allow_soft_blocker:
             blockers = [x for x in package_queue if isinstance(x, Blocker)]
             if blockers:
@@ -358,7 +355,7 @@ class PackageBuilder(object):
 
         # calculate dependencies, if --dependencies is not enabled
         # because we have to validate it
-        if (self._params['dependencies'] == "no") \
+        if (self._params["dependencies"] == "no") \
                 and (len(package_queue) > 1):
             deps = "\n  ".join(dep_list)
             print_warning("dependencies pulled in:")
@@ -367,7 +364,7 @@ class PackageBuilder(object):
             return None
 
         # protect against unwanted package unmerges
-        if self._params['unmerge'] == "no":
+        if self._params["unmerge"] == "no":
             unmerges = [x for x in real_queue if x.operation == "uninstall"]
             if unmerges:
                 deps = "\n  ".join([x.cpv for x in unmerges])
@@ -377,9 +374,9 @@ class PackageBuilder(object):
                 return None
 
         # inspect use flags changes
-        allow_new_useflags = self._params['new-useflags'] == "yes"
+        allow_new_useflags = self._params["new-useflags"] == "yes"
         allow_removed_useflags = \
-            self._params['removed-useflags'] == "yes"
+            self._params["removed-useflags"] == "yes"
 
         use_flags_give_up = False
         if (not allow_new_useflags) or (not allow_removed_useflags):
@@ -415,7 +412,7 @@ class PackageBuilder(object):
                           "USE flags constraint")
             return None
 
-        allow_downgrade = self._params['downgrade'] == "yes"
+        allow_downgrade = self._params["downgrade"] == "yes"
         # check the whole queue against downgrade directive
         if not allow_downgrade:
             allow_downgrade_give_ups = []
@@ -460,10 +457,10 @@ class PackageBuilder(object):
                     c_repo, w_repo,))
             print_warning("")
 
-        allow_spm_repo_change = self._params['spm-repository-change'] \
+        allow_spm_repo_change = self._params["spm-repository-change"] \
             == "yes"
         allow_spm_repo_change_if_ups = \
-            self._params['spm-repository-change-if-upstreamed'] == "yes"
+            self._params["spm-repository-change-if-upstreamed"] == "yes"
 
         if (not allow_spm_repo_change) and allow_spm_repo_change_if_ups:
             print_info("SPM repository change allowed if the original "
@@ -528,6 +525,29 @@ class PackageBuilder(object):
             # do not backup.
             settings["ACCEPT_KEYWORDS"] = keywords
             settings.lock()
+
+    @classmethod
+    def _setup_build_args(cls, spec):
+        """
+        Filter out invalid or unwanted Portage build arguments,
+        like --ask and --buildpkgonly and add other ones.
+        """
+        unwanted_args = ["--ask", "-a", "--buildpkgonly", "-B"]
+
+        for builtin_arg in PackageBuilder.PORTAGE_BUILTIN_ARGS:
+            yield builtin_arg
+
+        for build_arg in spec["build-args"]:
+            if build_arg not in unwanted_args:
+                yield build_arg
+            else:
+                print_warning("cannot use emerge %s argument, you idiot",
+                              build_arg)
+
+        build_only = spec["build-only"] == "yes"
+        if build_only:
+            yield "--buildpkg"
+            yield "--buildpkgonly"
 
     def _run_builder(self, dirs_cleanup_queue):
         """
@@ -625,15 +645,13 @@ class PackageBuilder(object):
 
         # non interactive properties, this is not really required
         # accept-properties just sets os.environ...
-        build_args = []
-        build_args += PackageBuilder.PORTAGE_BUILD_ARGS
-        build_args += PackageBuilder.PORTAGE_BUILTIN_ARGS
+        build_args = list(self._setup_build_args(self._params))
         build_args += ["=" + best_v for _x, best_v in packages]
-        myaction, myopts, myfiles = parse_opts(build_args)
 
-        if "--ask" in myopts:
-            print_warning("cannot use --ask emerge argument, you idiot")
-            del myopts["--ask"]
+        myaction, myopts, myfiles = parse_opts(build_args)
+        adjust_configs(myopts, emerge_trees)
+        apply_priorities(settings)
+
         spinner = stdout_spinner()
         if "--quiet" in myopts:
             spinner.update = spinner.update_basic
@@ -724,7 +742,7 @@ class PackageBuilder(object):
             print_warning("failed package: %s::%s" % (failed_package.cpv,
                 failed_package.repo,))
 
-        if self._params['buildfail'] and (failed_package is not None):
+        if self._params["buildfail"] and (failed_package is not None):
 
             std_env = PackageBuilder._build_standard_environment(
                 repository=self._params["repository"])
@@ -735,7 +753,7 @@ class PackageBuilder(object):
             std_env["MATTER_PORTAGE_BUILD_LOG_DIR"] = os.path.join(log_dir,
                 "build")
 
-            buildfail = self._params['buildfail']
+            buildfail = self._params["buildfail"]
             print_info("spawning buildfail: %s" % (buildfail,))
             tmp_fd, tmp_path = mkstemp()
             with os.fdopen(tmp_fd, "wb") as tmp_f:
@@ -754,16 +772,15 @@ class PackageBuilder(object):
         return retval
 
     @classmethod
-    def post_build(cls, emerge_config):
+    def post_build(cls, spec, emerge_config):
         """
         Execute Portage post-build tasks.
         """
         emerge_settings, emerge_trees, mtimedb = emerge_config
         if "yes" == emerge_settings.get("AUTOCLEAN"):
             print_info("executing post-build operations, please wait...")
-            builtin_args = PackageBuilder.PORTAGE_BUILTIN_ARGS
-            _action, opts, _files = parse_opts(
-                PackageBuilder.PORTAGE_BUILD_ARGS + builtin_args)
+            build_args = list(cls._setup_build_args(spec))
+            _action, opts, _files = parse_opts(build_args)
             unmerge(emerge_trees[emerge_settings["ROOT"]]["root_config"],
                 opts, "clean", [], mtimedb["ldpath"], autoclean=1)
 
