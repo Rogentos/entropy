@@ -222,7 +222,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
             self.__setting_files['keywords'],
             self.__setting_files['mask'],
             self.__setting_files['unmask'],
-            self.__setting_files['satisfied'],
             self.__setting_files['system_mask'],
             self.__setting_files['splitdebug'],
         ])
@@ -296,12 +295,11 @@ class SystemSettings(Singleton, EntropyPluginStore):
                     packages_dir, "package.unmask"),
              # masking configuration files
             'mask': os.path.join(packages_dir, "package.mask"),
-            # satisfied packages configuration file
-            'satisfied': os.path.join(
-                    packages_dir, "package.satisfied"),
             # selectively enable splitdebug for packages
             'splitdebug': os.path.join(
                     packages_dir, "package.splitdebug"),
+            'splitdebug_mask': os.path.join(
+                    packages_dir, "package.splitdebug.mask"),
              # masking configuration files
             'license_mask': os.path.join(
                     packages_dir, "license.mask"),
@@ -329,11 +327,12 @@ class SystemSettings(Singleton, EntropyPluginStore):
             'system_package_sets': {},
         })
         self.__setting_files_order.extend([
-            'keywords', 'unmask', 'mask', 'satisfied', 'license_mask',
+            'keywords', 'unmask', 'mask', 'license_mask',
             'license_accept', 'system_mask', 'system_package_sets',
             'system_dirs', 'system_dirs_mask', 'extra_ldpaths',
-            'splitdebug', 'system', 'system_rev_symlinks', 'hw_hash',
-            'broken_syms', 'broken_libs_mask', 'broken_links_mask'
+            'splitdebug', 'splitdebug_mask', 'system',
+            'system_rev_symlinks', 'hw_hash', 'broken_syms',
+            'broken_libs_mask', 'broken_links_mask'
         ])
         self.__setting_files_pre_run.extend(['repositories'])
 
@@ -342,7 +341,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
             'keywords_mtime': os.path.join(dmp_dir, "keywords.mtime"),
             'unmask_mtime': os.path.join(dmp_dir, "unmask.mtime"),
             'mask_mtime': os.path.join(dmp_dir, "mask.mtime"),
-            'satisfied_mtime': os.path.join(dmp_dir, "satisfied.mtime"),
             'license_mask_mtime': os.path.join(dmp_dir,
                                                "license_mask.mtime"),
             'license_accept_mtime': os.path.join(dmp_dir,
@@ -911,26 +909,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         else:
             return content
 
-    def _satisfied_parser(self):
-        """
-        Parser returning package forced satisfaction metadata
-        read from package.satisfied file.
-        This file contains packages which updates as dependency are
-        filtered out.
-
-        @return: parsed metadata
-        @rtype: dict
-        """
-        valid = self.validate_entropy_cache(self.__setting_files['satisfied'],
-            self.__mtime_files['satisfied_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
-        return self.__generic_parser(self.__setting_files['satisfied'],
-            comment_tag = self.__pkg_comment_tag)
-
     def _system_mask_parser(self):
         """
         Parser returning system packages mask metadata read from
@@ -956,7 +934,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
         """
         Parser returning packages for which the splitdebug feature
         should be enabled. Splitdebug is about installing /usr/lib/debug
-        files into system. If no entries are listed in here and
+        files into the system. If no entries are listed in here and
         splitdebug is enabled in client.conf, the feature will be considered
         enabled for any package.
 
@@ -964,6 +942,21 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @rtype: dict
         """
         return self.__generic_parser(self.__setting_files['splitdebug'],
+            comment_tag = self.__pkg_comment_tag)
+
+    def _splitdebug_mask_parser(self):
+        """
+        Parser returning packages for which the splitdebug feature
+        should be always disabled. This takes the precedence over
+        package.splitdebug.
+        Splitdebug is about installing /usr/lib/debug files into the system.
+        If no entries are listed in here and splitdebug is enabled in
+        client.conf, the feature will be considered enabled for any package.
+
+        @return: parsed metadata
+        @rtype: dict
+        """
+        return self.__generic_parser(self.__setting_files['splitdebug_mask'],
             comment_tag = self.__pkg_comment_tag)
 
     def _license_mask_parser(self):

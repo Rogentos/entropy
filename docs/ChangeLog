@@ -1,3 +1,181 @@
+commit 7573e0e1d5194af9ffa58a2570a1ef2e53e5762e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 01:08:10 2013 +0000
+
+    Release Entropy 180
+
+commit b905b98525165755ac17545da01c607f5bd330c0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 01:06:31 2013 +0000
+
+    [entropy.server] _calculate_sync_queues: ignore remote package file if a local .weak file exists
+
+commit 873ae5267b3f2ca6eba181cc50ef11cb9cbedde1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 01:03:52 2013 +0000
+
+    [entropy.server] _calculate_sync_queues: ignore local package file if .weak file exists
+
+commit 46577fe93f09b6d6f8f6f758db15cf8198ca05c1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:54:01 2013 +0000
+
+    [entropy.server] _calculate_local_package_files: properly handle .weak files
+
+commit 3a49a8cc47459512dc4cfe9249261af8f7739b64
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:39:54 2013 +0000
+
+    [entropy.server] _calculate_local_package_files: take into consideration .weak files
+
+commit 55110bf2308b7a82e09d71fe57335b1480123b06
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:27:22 2013 +0000
+
+    [entropy.server] _show_sync_queues: inform about package download as well
+
+commit 552698d2d67eefdcf973c9bb17d2679793a7aa50
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:18:51 2013 +0000
+
+    [entropy.server] tidy_mirrors: fix weak file detection logic
+
+commit 9f0bdb959ca3c65fb620578ee7b983e525261c2f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:12:06 2013 +0000
+
+    [entropy.server] tidy_mirrors: do not show packages as weak if they've already marked
+
+commit be758fae7b4658dc1c7e397b314d1381ea0fd0d0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 3 00:03:40 2013 +0000
+
+    [entropy.server] tidy_mirrors: do not show packages as expired if they've already marked
+
+commit 843c9ad6f85b51fcbfa170db9d9ae3a81ea59bc9
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 23:54:46 2013 +0000
+
+    [entropy.server] s/extra_package_rel/package_rel/ in tidy_mirrors()
+
+commit 5801abf88d23bbe198fdb34c9b7166a6ad2b184c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 23:50:08 2013 +0000
+
+    [entropy.server] fix typos in tidy_mirrors()
+
+commit 82770b26ae68f698e1156c814881f407de141e0b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 18:58:16 2013 +0000
+
+    Tagging Entropy version 179
+
+commit ee38930096b8d8ea72023e41d3196b6eedfc5730
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 18:58:16 2013 +0000
+
+    Release Entropy 179
+
+commit 7bef53d99c6a3b55875f5ea2139a267067f74d1b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 18:54:12 2013 +0000
+
+    [entropy.server] add "weak package files" support
+    
+    Weak package files is a feature that makes possible to save a lot of
+    local space if enabled. Basically, all the package files no longer in
+    the repository are locally removed before their expiration. This reduces
+    local data redundancy with no real reliability impact.
+
+commit 983b72d6a74962f47de3755b686dff380134927b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Mar 2 18:37:14 2013 +0000
+
+    [eit] add --pretend support to push, pull and cleanup commands
+
+commit 8af1d2fe2d8ba0c47527161ddfe388d539eceff1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Feb 28 16:37:52 2013 +0000
+
+    [equo] update man pages
+
+commit 17d19458a705f2b1b09534f652d080a92b344ae5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Feb 28 13:48:30 2013 +0000
+
+    [entropy.client.dep] use set.clear and dict.clear instead of del
+
+commit d996460b305ecd35312a7667da7609b7541e8f8e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Feb 28 13:42:41 2013 +0000
+
+    [entropy.client.dep,solo] add support for --onlydeps, as per bug #3817
+    
+    equo {install,source,download} now support --onlydeps.
+    Using --onlydeps, only dependencies of the selected packages are installed,
+    unless the selected packages are dependencies themselves.
+
+commit 7faf042f86a94cd432cedbe5fb477e95cf3e717b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Feb 28 09:13:08 2013 +0000
+
+    [magneto/gtk*] fix string format in both gtk2 and gtk3 frontends
+
+commit 83b8991c95d080973631a5c1e36af6a7573eeed9
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Feb 27 20:59:14 2013 +0000
+
+    [magneto] rewrite systray icons management, improve KDE, GNOME and MATE integration
+    
+    This huge commit addresses several things:
+    - Fix bug #3995
+    - Force the GTK2 frontend when MATE is running
+    - Migrate to KStatusNotifierItem for KDE and hide the icon whenever
+      it makes sense.
+    - Use SVG icons in the GTK3 frontend, improving eye candy when running in GNOME3
+    - The usual cruft cleanup
+
+commit f0a8156eb786da64a70b3a398d38db4cf7b2d5dc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Feb 25 00:14:00 2013 +0100
+
+    [Rigo] ApplicationsViewController: sort category and package set entries
+
+commit 5d315c70bdbd455dc46f680b54275cb59853dd43
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Feb 24 23:34:49 2013 +0100
+
+    [entropy.const] drop /var/run/entropy/entropy.lock file and directory handling
+    
+    This is no longer used by Entropy, which does use a more fine grained locking
+    instead.
+
+commit 7771d641e2972ce7ab35ab18c47e62178337e191
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Feb 24 13:30:28 2013 +0000
+
+    [entropy.client] extend Client.calculate_updates() to return critical updates info
+    
+    calculate_updates() now returns a dictionary containing the same pieces of
+    information available before. In addition, it now also returns if critical
+    updates were found and returned by the method itself.
+    This is particularly useful for enforcing relaxed deps calculation in case
+    of critical updates (which is what happens now).
+    
+    This commit breaks the Entropy Client API.
+
+commit 6a2690b86eed37314bd5548210d830d1c67fe7d2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Feb 24 12:26:13 2013 +0000
+
+    [matter] do not print useless "MATTER_PACKAGE_NAMES = blah"
+
+commit 987fa76361ec85f68db21e09fbc72bb0f65c5e08
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Feb 21 00:11:14 2013 +0100
+
+    Tagging Entropy version 178
+
 commit 1fa5b9acf3f98e543670fec9b4da189c9e620244
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Thu Feb 21 00:11:14 2013 +0100
