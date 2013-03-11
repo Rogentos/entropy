@@ -14,6 +14,7 @@ PYFILES = $(wildcard ../../lib/entropy/db/*.py) \
 	$(wildcard ../../lib/entropy/core/settings/*.py) \
 	$(wildcard ../../lib/entropy/core/settings/plugins/*.py) \
 	$(wildcard ../../lib/entropy/core/settings/plugins/interfaces/*.py) \
+	$(wildcard ../../lib/kswitch/*.py) \
 	$(wildcard ../../lib/entropy/spm/*.py) \
 	$(wildcard ../../lib/entropy/spm/plugins/*.py) \
 	$(wildcard ../../lib/entropy/spm/plugins/portage_plugin/*.py) \
@@ -35,7 +36,7 @@ PYFILES = $(wildcard ../../lib/entropy/db/*.py) \
 	$(wildcard ../../magneto/src/magneto/kde/*.py) \
 	$(wildcard ../../magneto/src/magneto/gtk/*.py) \
 	$(wildcard ../../magneto/src/magneto/core/*.py) \
-	../../services/kernel-switcher
+	../kernel-switcher
 
 POTFILES = $(PYFILES) $(GLADEFILES)
 

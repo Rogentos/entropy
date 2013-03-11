@@ -1,7 +1,5 @@
 Short term:
 
-- use .ini-like layout for entropy config
-
 - conditional deps:
   enabled with ETP_PORTAGE_CONDITIONAL_DEPS_ENABLE
   Test package generation and entropy client behaviour
@@ -15,3 +13,9 @@ Short term:
  - move variables away from etpConst
    (to SystemSettings || Client || Server as static methods)
  - Python 3.3+ support
+
+ - [2014] remove repositories parsing from repositories.conf
+          also see _conf_add_repository(), _conf_remove_repository(),
+          shift_repository()
+ - [2015] remove non-ini repositories parsing support from repositories.conf.*
+ - [2015] remove repositories parsing from server.conf

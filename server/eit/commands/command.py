@@ -9,13 +9,40 @@
     B{Entropy Infrastructure Toolkit}.
 
 """
+import argparse
+
 from entropy.i18n import _
-from entropy.output import darkgreen, print_error
+from entropy.output import darkgreen, print_error, print_generic
 from entropy.exceptions import PermissionDenied
 from entropy.server.interfaces import Server
 from entropy.core.settings.base import SystemSettings
 
 import entropy.tools
+
+
+def _fix_argparse_print_help():
+    """
+    Fix argparse.ArgumentParser.print_help to always work
+    with UTF-8 characters and pipes. See bug 4049.
+    """
+    class _Printer(object):
+
+        @classmethod
+        def write(self, string):
+            print_generic(string)
+
+    original_print_help = argparse.ArgumentParser.print_help
+
+    def _print_help(zelf, file=None):
+        if file is None:
+            file = _Printer
+        return original_print_help(zelf, file=file)
+
+    argparse.ArgumentParser.print_help = _print_help
+
+
+_fix_argparse_print_help()
+
 
 class EitCommand(object):
     """
