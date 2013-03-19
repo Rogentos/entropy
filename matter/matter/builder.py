@@ -65,8 +65,9 @@ class PackageBuilder(object):
 
     PORTAGE_BUILTIN_ARGS = ["--accept-properties=-interactive"]
 
-    def __init__(self, emerge_config, packages, params,
+    def __init__(self, binary_pms, emerge_config, packages, params,
         spec_number, tot_spec, pkg_number, tot_pkgs, pretend):
+        self._binpms = binary_pms
         self._emerge_config = emerge_config
         self._packages = packages
         self._params = params
@@ -101,7 +102,7 @@ class PackageBuilder(object):
 
         print_info("spawning pre hook: %s" % (hook_name,))
         return subprocess.call([hook_name],
-            env = PackageBuilder._build_standard_environment())
+            env = cls._build_standard_environment())
 
     @classmethod
     def teardown(cls, executable_hook_f, cwd, exit_st):
@@ -112,7 +113,7 @@ class PackageBuilder(object):
 
         print_info("spawning post hook: %s, passing exit status: %d" % (
             hook_name, exit_st,))
-        env = PackageBuilder._build_standard_environment()
+        env = cls._build_standard_environment()
         env["MATTER_EXIT_STATUS"] = str(exit_st)
         return subprocess.call([hook_name], env = env)
 
@@ -167,7 +168,7 @@ class PackageBuilder(object):
             header + "spawning package build: %s" % (
                 " ".join(self._packages),))
 
-        std_env = PackageBuilder._build_standard_environment(
+        std_env = self._build_standard_environment(
             repository=self._params["repository"])
 
         matter_package_names = " ".join(self._packages)
@@ -275,6 +276,7 @@ class PackageBuilder(object):
                 "package not installed: "
                 "%s, but 'not-installed: yes' provided" % (package,))
 
+        build_only = self._params["build-only"] == "yes"
         cmp_res = -1
         if best_installed:
             print_info("found installed: %s for %s" % (
@@ -286,6 +288,21 @@ class PackageBuilder(object):
             cmp_res = portage.versions.pkgcmp(
                 portage.versions.pkgsplit(best_installed),
                 portage.versions.pkgsplit(best_visible))
+        elif (not best_installed) and build_only:
+            # package is not installed, and build-only
+            # is provided. We assume that the package
+            # is being built and added to repositories directly.
+            # This means that we need to query binpms to know
+            # about the current version.
+            print_info("package is not installed, and 'build-only: yes'. "
+                       "Asking the binpms about the package state.")
+            best_available = self._binpms.best_available(package)
+            print_info("found available: %s for %s" % (
+                    best_available, package))
+            if best_available:
+                cmp_res = portage.versions.pkgcmp(
+                    portage.versions.pkgsplit(best_available),
+                    portage.versions.pkgsplit(best_visible))
 
         is_rebuild = cmp_res == 0
 
@@ -533,7 +550,7 @@ class PackageBuilder(object):
         """
         unwanted_args = ["--ask", "-a", "--buildpkgonly", "-B"]
 
-        for builtin_arg in PackageBuilder.PORTAGE_BUILTIN_ARGS:
+        for builtin_arg in cls.PORTAGE_BUILTIN_ARGS:
             yield builtin_arg
 
         for build_arg in spec["build-args"]:
@@ -743,7 +760,7 @@ class PackageBuilder(object):
 
         if self._params["buildfail"] and (failed_package is not None):
 
-            std_env = PackageBuilder._build_standard_environment(
+            std_env = self._build_standard_environment(
                 repository=self._params["repository"])
             std_env["MATTER_PACKAGE_NAMES"] = " ".join(self._packages)
             std_env["MATTER_PORTAGE_FAILED_PACKAGE_NAME"] = failed_package.cpv
@@ -788,12 +805,12 @@ class PackageBuilder(object):
         """
         Execute Portage and Overlays sync
         """
-        sync_cmd = PackageBuilder.PORTAGE_SYNC_CMD
-        std_env = PackageBuilder._build_standard_environment()
+        sync_cmd = cls.PORTAGE_SYNC_CMD
+        std_env = cls._build_standard_environment()
         exit_st = subprocess.call(sync_cmd, env = std_env)
         if exit_st != 0:
             return exit_st
 
         # overlays update
-        overlay_cmd = PackageBuilder.OVERLAYS_SYNC_CMD
+        overlay_cmd = cls.OVERLAYS_SYNC_CMD
         return subprocess.call(overlay_cmd, env = std_env)

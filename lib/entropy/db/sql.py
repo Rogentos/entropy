@@ -194,6 +194,9 @@ class SQLCursorWrapper(object):
         except self._excs.Warning as err:
             raise Warning(err)
 
+    def wrap(self, method, *args, **kwargs):
+        return self._proxy_call(method, *args, **kwargs)
+
     def execute(self, *args, **kwargs):
         raise NotImplementedError()
 
@@ -881,17 +884,25 @@ class EntropySQLRepository(EntropyRepositoryBase):
         Flatten out a cursor content (usually some kind of list of lists)
         and transform it into an immutable frozenset object.
         """
-        mycontent = set()
-        for x in cur:
-            mycontent |= set(x)
-        return frozenset(mycontent)
+        def _convert():
+            content = set()
+            for x in cur:
+                content |= set(x)
+            return frozenset(content)
+
+        wrapper = SQLCursorWrapper(cur, self.ModuleProxy.exceptions())
+        return wrapper.wrap(_convert)
 
     def _cur2tuple(self, cur):
         """
         Flatten out a cursor content (usually some kind of list of lists)
         and transform it into an immutable tuple object.
         """
-        return tuple(itertools.chain.from_iterable(cur))
+        def _convert():
+            return tuple(itertools.chain.from_iterable(cur))
+
+        wrapper = SQLCursorWrapper(cur, self.ModuleProxy.exceptions())
+        return wrapper.wrap(_convert)
 
     def _connection_pool(self):
         """
