@@ -44,7 +44,7 @@ class MySQLCursorWrapper(SQLCursorWrapper):
     def __init__(self, cursor, exceptions, errno):
         self._errno = errno
         self._conn_wr = cursor.connection
-        SQLCursorWrapper.__init__(self, cursor, exceptions)
+        super(MySQLCursorWrapper, self).__init__(cursor, exceptions)
 
     def _proxy_call(self, *args, **kwargs):
         """
@@ -109,7 +109,14 @@ class MySQLCursorWrapper(SQLCursorWrapper):
         return self._proxy_call(self._cur.nextset, *args, **kwargs)
 
     def __iter__(self):
-        return iter(self._cur)
+        cur = iter(self._cur)
+        return MySQLCursorWrapper(cur, self._excs)
+
+    def __next__(self):
+        return self.wrap(next, self._cur)
+
+    def next(self):
+        return self.wrap(self._cur.next)
 
 
 class MySQLConnectionWrapper(SQLConnectionWrapper):
