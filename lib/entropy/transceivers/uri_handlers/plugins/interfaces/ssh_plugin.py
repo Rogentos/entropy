@@ -13,12 +13,11 @@ import re
 import os
 import errno
 import time
-import tempfile
 import shutil
 import codecs
 
 from entropy.const import const_isnumber, const_debug_write, \
-    etpConst
+    const_mkdtemp, const_mkstemp, etpConst
 from entropy.output import brown, darkgreen, teal
 from entropy.i18n import _
 from entropy.transceivers.exceptions import TransceiverConnectionError
@@ -185,8 +184,8 @@ class EntropySshUriHandler(EntropyUriHandler):
 
     def _exec_cmd(self, args):
 
-        fd, tmp_path = tempfile.mkstemp(prefix="entropy.transceivers.ssh_plug")
-        fd_err, tmp_path_err = tempfile.mkstemp(
+        fd, tmp_path = const_mkstemp(prefix="entropy.transceivers.ssh_plug")
+        fd_err, tmp_path_err = const_mkstemp(
             prefix="entropy.transceivers.ssh_plug")
         try:
             with os.fdopen(fd, "wb") as std_f:
@@ -251,7 +250,7 @@ class EntropySshUriHandler(EntropyUriHandler):
             except (shutil.Error, OSError, IOError,):
                 pass
 
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = const_mkdtemp(prefix="ssh_plugin.download_many")
 
         args = [EntropySshUriHandler._TXC_CMD]
         c_args, remote_str = self._setup_common_args(remote_paths.pop())
@@ -336,7 +335,7 @@ class EntropySshUriHandler(EntropyUriHandler):
         tmp_file_map = {}
         try:
             for load_path in load_path_list:
-                tmp_fd, tmp_path = tempfile.mkstemp(
+                tmp_fd, tmp_path = const_mkstemp(
                     suffix = EntropyUriHandler.TMP_TXC_FILE_EXT,
                     prefix = "._%s" % (os.path.basename(load_path),))
                 os.close(tmp_fd)

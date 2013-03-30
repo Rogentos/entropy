@@ -30,6 +30,7 @@ from entropy.const import etpConst, etpSys, const_setup_perms, \
 from entropy.core import Singleton, EntropyPluginStore, BaseConfigParser
 from entropy.cache import EntropyCacher
 from entropy.core.settings.plugins.skel import SystemSettingsPlugin
+from entropy.i18n import _
 
 import entropy.tools
 
@@ -84,6 +85,11 @@ class RepositoryConfigParser(BaseConfigParser):
 
     _DEFAULT_ENABLED_VALUE = True
 
+    # Repository configuration file suggested prefix. If config files
+    # are prefixed with this string, they can be automatically handled
+    # by Entropy.
+    FILENAME_PREFIX = "entropy_"
+
     def __init__(self, encoding = None):
         super(RepositoryConfigParser, self).__init__(encoding = encoding)
 
@@ -104,9 +110,184 @@ class RepositoryConfigParser(BaseConfigParser):
             return
         return candidate
 
+    def add(self, repository_id, desc, repos, pkgs, enabled = True):
+        """
+        Add a repository to the repository configuration files directory.
+        Older repository configuration may get overwritten. This method
+        only writes repository configuration in the new .ini format and to
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @param desc: repository description
+        @type desc: string
+        @param repos: list of "repo=" uri dicts (containing "uri" and
+            "dbcformat" keys)
+        @type repos: list
+        @param pkgs: list of packages mirrors uris
+        @type pkgs: list
+        @keyword enabled: True, if the repository is enabled
+        @type enabled: bool
+        @return: True, if success
+        @rtype: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Client (see repositories.conf.d/README) start with
+        # entropy_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        self.write(enabled_conf_file, repository_id, desc, repos, pkgs)
+
+        # if any disabled entry file is around, kill it with fire!
+        try:
+            os.remove(disabled_conf_file)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        return True
+
+    def remove(self, repository_id):
+        """
+        Remove a repository from the repositories configuration files directory.
+
+        This method only removes repository configuration at
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @return: True, if success
+        @rtype: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Client (see repositories.conf.d/README) start with
+        # entropy_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        accomplished = False
+        try:
+            os.remove(enabled_conf_file)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        # since we want to remove, also drop disabled
+        # config files
+        try:
+            os.remove(disabled_conf_file)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        return accomplished
+
+    def enable(self, repository_id):
+        """
+        Enable a repository.
+
+        This method only handles repository configuration at
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @return: True, if success
+        @rtype: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Client (see repositories.conf.d/README) start with
+        # entropy_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        # enabling or disabling the repo is just a rename()
+        # away for the new style files in repositories.conf.d/
+        accomplished = False
+
+        try:
+            os.rename(disabled_conf_file, enabled_conf_file)
+            os.utime(enabled_conf_file, None)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                # do not handle EPERM ?
+                raise
+
+        return accomplished
+
+    def disable(self, repository_id):
+        """
+        Disable a repository.
+
+        This method only handles repository configuration at
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @return: True, if success
+        @rtype: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Client (see repositories.conf.d/README) start with
+        # entropy_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        # enabling or disabling the repo is just a rename()
+        # away for the new style files in repositories.conf.d/
+        accomplished = False
+
+        try:
+            os.rename(enabled_conf_file, disabled_conf_file)
+            os.utime(disabled_conf_file, None)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                # do not handle EPERM ?
+                raise
+
+        return accomplished
+
     def write(self, path, repository_id, desc, repos, pkgs, enabled = True):
         """
         Write the repository configuration to the given file.
+
+        @param path: configuration file to write
+        @type path: string
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @param desc: repository description
+        @type desc: string
+        @param repos: list of "repo=" uri dicts (containing "uri" and
+            "dbcformat" keys)
+        @type repos: list
+        @param pkgs: list of packages mirrors uris
+        @type pkgs: list
+        @keyword enabled: True, if the repository is enabled
+        @type enabled: bool
         """
         if enabled:
             enabled_str = "true"
@@ -1822,47 +2003,50 @@ class SystemSettings(Singleton, EntropyPluginStore):
             func(line, value)
 
         # .ini-like file support.
-        _conf_dir, setting_files, _skipped_files, _auto_upd = \
+        _conf_dir, setting_files, skipped_files, _auto_upd = \
             self.__setting_dirs["repositories_conf_d"]
         candidate_inis = [x for x, y in setting_files]
+        disabled_candidate_inis = [x for x, y in skipped_files]
 
-        ini_parser = RepositoryConfigParser(encoding = enc)
-        try:
-            ini_parser.read(candidate_inis)
-        except (IOError, OSError) as err:
-            sys.stderr.write("Cannot parse %s: %s\n" % (
-                    " ".join(candidate_inis),
-                    err))
-            ini_parser = None
+        for inis in (candidate_inis, disabled_candidate_inis):
+            ini_parser = RepositoryConfigParser(encoding = enc)
+            try:
+                ini_parser.read(inis)
+            except (IOError, OSError) as err:
+                sys.stderr.write("Cannot parse %s: %s\n" % (
+                        " ".join(inis),
+                        err))
+                ini_parser = None
 
-        if ini_parser:
-            ini_repositories = ini_parser.repositories()
-            for ini_repository in ini_repositories:
-                if ini_repository in repoids:
-                    # double syntax is not supported.
-                    continue
+            if ini_parser:
+                ini_conf_excluded = inis is disabled_candidate_inis
+                ini_repositories = ini_parser.repositories()
+                for ini_repository in ini_repositories:
+                    if ini_repository in repoids:
+                        # double syntax is not supported.
+                        continue
 
-                repoids.add(ini_repository)
-                ini_dbs = ini_parser.repo(ini_repository)
-                try:
-                    ini_pkgs = ini_parser.pkgs(ini_repository)
-                except KeyError:
-                    ini_pkgs = []
+                    repoids.add(ini_repository)
+                    ini_dbs = ini_parser.repo(ini_repository)
+                    try:
+                        ini_pkgs = ini_parser.pkgs(ini_repository)
+                    except KeyError:
+                        ini_pkgs = []
 
-                try:
-                    ini_desc = ini_parser.desc(ini_repository)
-                except KeyError:
-                    ini_desc = _("No description")
+                    try:
+                        ini_desc = ini_parser.desc(ini_repository)
+                    except KeyError:
+                        ini_desc = _("No description")
 
-                ini_excluded = not ini_parser.enabled(ini_repository)
-                ini_data = self._generate_repository_metadata(
-                    ini_repository, ini_desc, ini_pkgs, ini_dbs,
-                    data['product'], data['branch'])
-                if ini_excluded:
-                    data['excluded'][ini_repository] = ini_data
-                else:
-                    data['available'][ini_repository] = ini_data
-                    data['order'].append(ini_repository)
+                    ini_excluded = not ini_parser.enabled(ini_repository)
+                    ini_data = self._generate_repository_metadata(
+                        ini_repository, ini_desc, ini_pkgs, ini_dbs,
+                        data['product'], data['branch'])
+                    if ini_excluded or ini_conf_excluded:
+                        data['excluded'][ini_repository] = ini_data
+                    else:
+                        data['available'][ini_repository] = ini_data
+                        data['order'].append(ini_repository)
 
         try:
             tx_limit = int(os.getenv("ETP_DOWNLOAD_KB"))

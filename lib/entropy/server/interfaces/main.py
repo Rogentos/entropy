@@ -19,7 +19,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import tempfile
 import time
 
 from entropy.exceptions import OnlineMirrorError, PermissionDenied, \
@@ -27,7 +26,8 @@ from entropy.exceptions import OnlineMirrorError, PermissionDenied, \
 from entropy.const import etpConst, etpSys, const_setup_perms, \
     const_create_working_dirs, const_convert_to_unicode, \
     const_setup_file, const_get_stringtype, const_debug_write, \
-    const_debug_enabled, const_convert_to_rawstring
+    const_debug_enabled, const_convert_to_rawstring, const_mkdtemp, \
+    const_mkstemp
 from entropy.output import purple, red, darkgreen, \
     bold, brown, blue, darkred, teal
 from entropy.cache import EntropyCacher
@@ -484,6 +484,11 @@ class RepositoryConfigParser(BaseConfigParser):
     _DEFAULT_ENABLED_VALUE = True
     _DEFAULT_BASE_VALUE = False
 
+    # Repository configuration file suggested prefix. If config files
+    # are prefixed with this string, they can be automatically handled
+    # by Entropy.
+    FILENAME_PREFIX = "entropysrv_"
+
     def __init__(self, encoding = None):
         super(RepositoryConfigParser, self).__init__(encoding = encoding)
 
@@ -530,6 +535,170 @@ class RepositoryConfigParser(BaseConfigParser):
         if base is None and repositories:
             base = repositories[0]
         return base
+
+    def add(self, repository_id, desc, repo, repo_only, pkg_only,
+            base, enabled = True):
+        """
+        Add a repository to the repository configuration files directory.
+        Older repository configuration may get overwritten. This method
+        only writes repository configuration in the new .ini format and to
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @param desc: repository description
+        @type desc: string
+        @param repo: list of "repo=" uris
+        @type repo: list
+        @param repo_only: list of "repo-only=" uris
+        @type repo_only: list
+        @param pkg_only: list of "pkg-only=" uris
+        @type pkg_only: list
+        @param base: True, if this is the base repository
+        @type base: bool
+        @keyword enabled: True, if the repository is enabled
+        @type enabled: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Server (see repositories.conf.d/README) start with
+        # entropysrv_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        self.write(enabled_conf_file, repository_id, desc, repo, repo_only,
+                   pkg_only, base, enabled = enabled)
+
+        # if any disabled entry file is around, kill it with fire!
+        try:
+            os.remove(disabled_conf_file)
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        return True
+
+    def remove(self, repository_id):
+        """
+        Remove a repository from the repositories configuration files directory.
+
+        This method only removes repository configuration at
+        /etc/entropy/repositories.conf.d/<filename prefix><repository id>.
+
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @return: True, if success
+        @rtype: bool
+        """
+        settings = SystemSettings()
+        repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
+        conf_d_dir, _conf_files_mtime, _skipped_files, _auto_upd = repo_d_conf
+        # as per specifications, enabled config files handled by
+        # Entropy Server (see repositories.conf.d/README) start with
+        # entropysrv_ prefix.
+        base_name = self.FILENAME_PREFIX + repository_id
+        enabled_conf_file = os.path.join(conf_d_dir, base_name)
+        # while disabled config files start with _
+        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
+
+        accomplished = False
+        try:
+            os.remove(enabled_conf_file)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        # since we want to remove, also drop disabled
+        # config files
+        try:
+            os.remove(disabled_conf_file)
+            accomplished = True
+        except OSError as err:
+            if err.errno != errno.ENOENT:
+                raise
+
+        return accomplished
+
+    def write(self, path, repository_id, desc, repo, repo_only,
+              pkg_only, base, enabled = True):
+        """
+        Write the repository configuration to the given file.
+
+        @param path: configuration file to write
+        @type path: string
+        @param repository_id: repository identifier
+        @type repository_id: string
+        @param desc: repository description
+        @type desc: string
+        @param repo: list of "repo=" uris
+        @type repo: list
+        @param repo_only: list of "repo-only=" uris
+        @type repo_only: list
+        @param pkg_only: list of "pkg-only=" uris
+        @type pkg_only: list
+        @param base: True, if this is the base repository, False if not, None
+            if unset.
+        @type base: bool
+        @keyword enabled: True, if the repository is enabled
+        @type enabled: bool
+        """
+        if enabled:
+            enabled_str = "true"
+        else:
+            enabled_str = "false"
+
+        if base:
+            base_str = "base = true"
+        elif base is None:
+            base_str = "# base = false"
+        else:
+            base_str = "base = false"
+
+        repos_str = ""
+        for r in repo:
+            repos_str += "repo = %s\n" % (r,)
+
+        repo_only_str = ""
+        for r in repo_only:
+            repo_only_str += "repo-only = %s\n" % (r,)
+        if not repo_only_str:
+            repo_only_str = "# repo-only = "
+
+        pkg_only_str = ""
+        for pkg in pkg_only:
+            pkg_only_str += "pkg-only = %s\n" % (pkg,)
+        if not pkg_only_str:
+            pkg_only_str = "# pkg-only = "
+
+        meta = {
+            "repository_id": repository_id,
+            "desc": desc,
+            "repos": repos_str.rstrip(),
+            "repo_only": repo_only_str.rstrip(),
+            "pkg_only": pkg_only_str.rstrip(),
+            "enabled": enabled_str,
+            "base": base_str,
+        }
+
+        config = """\
+# Repository configuration file automatically generated
+# by Entropy Server on your behalf.
+
+[server=%(repository_id)s]
+%(base)s
+desc = %(desc)s
+%(repos)s
+%(repo_only)s
+%(pkg_only)s
+enabled = %(enabled)s
+""" % meta
+
+        entropy.tools.atomic_write(path, config, self._encoding)
 
     def repositories(self):
         """
@@ -1445,7 +1614,7 @@ class ServerQAInterfacePlugin(QAInterfacePlugin):
                     return True
             return False
 
-        tmp_fd, tmp_f = tempfile.mkstemp(prefix = 'entropy.server')
+        tmp_fd, tmp_f = const_mkstemp(prefix = 'entropy.server')
         dbc = None
         try:
             found_edb = entropy.tools.dump_entropy_metadata(package_path, tmp_f)
@@ -2009,7 +2178,6 @@ class Server(Client):
         """
         return self._repository
 
-
     def QA(self):
         """
         Get Entropy QA Interface instance.
@@ -2377,7 +2545,7 @@ class Server(Client):
 
 
         all_fine = True
-        tmp_down_dir = tempfile.mkdtemp(prefix = "entropy.server")
+        tmp_down_dir = const_mkdtemp(prefix="entropy.server")
 
         download_queue = {}
         dbconn = self.open_server_repository(repository_id, read_only = False,
@@ -3158,7 +3326,7 @@ class Server(Client):
         orig_fd = None
         tmp_repo_orig_path = None
         try:
-            orig_fd, tmp_repo_orig_path = tempfile.mkstemp(
+            orig_fd, tmp_repo_orig_path = const_mkstemp(
                 prefix="entropy.server._inject")
 
             empty_repo = GenericRepository(
@@ -3186,7 +3354,7 @@ class Server(Client):
                 tmp_repo_file = None
                 tmp_fd = None
                 try:
-                    tmp_fd, tmp_repo_file = tempfile.mkstemp(
+                    tmp_fd, tmp_repo_file = const_mkstemp(
                         prefix="entropy.server._inject_for")
                     with os.fdopen(tmp_fd, "wb") as tmp_f:
                         with open(tmp_repo_orig_path, "rb") as empty_f:
@@ -4591,7 +4759,7 @@ class Server(Client):
         """
         pkg_list_path = None
         if dump_results_to_file:
-            tmp_dir = tempfile.mkdtemp(prefix = "entropy.server")
+            tmp_dir = const_mkdtemp(prefix="entropy.server")
             pkg_list_path = os.path.join(tmp_dir, "libtest_broken.txt")
             dmp_data = [
                 (_("Broken and matched packages list"), pkg_list_path,),
@@ -4871,7 +5039,7 @@ class Server(Client):
             if not found:
                 new_content.append("default-repository = %s" % (repoid,))
 
-            tmp_fd, tmp_path = tempfile.mkstemp()
+            tmp_fd, tmp_path = const_mkstemp(prefix="_save_default_repository")
             with entropy.tools.codecs_fdopen(tmp_fd, "w", enc) as f_srv_t:
                 for line in new_content:
                     f_srv_t.write(line+"\n")
@@ -4935,7 +5103,7 @@ class Server(Client):
                 raise
             return None
 
-        tmp_fd, tmp_path = tempfile.mkstemp()
+        tmp_fd, tmp_path = const_mkstemp(prefix="_toggle_repository")
         with entropy.tools.codecs_fdopen(tmp_fd, "w", enc) as f_tmp:
             status = False
             for line in content:
@@ -5116,7 +5284,7 @@ class Server(Client):
         @type output_interface: entropy.output.TextInterface based instance
         """
         if temp_file is None:
-            tmp_fd, temp_file = tempfile.mkstemp(prefix = 'entropy.server')
+            tmp_fd, temp_file = const_mkstemp(prefix = 'entropy.server')
             os.close(tmp_fd)
 
         conn = ServerPackagesRepository(
@@ -5770,7 +5938,7 @@ class Server(Client):
         while True:
 
             if tmp_path is None:
-                tmp_fd, tmp_path = tempfile.mkstemp(prefix = 'entropy.server',
+                tmp_fd, tmp_path = const_mkstemp(prefix = 'entropy.server',
                     suffix = ".conf")
                 with entropy.tools.codecs_fdopen(tmp_fd, "w", enc) as tmp_f:
                     tmp_f.write(header_txt)

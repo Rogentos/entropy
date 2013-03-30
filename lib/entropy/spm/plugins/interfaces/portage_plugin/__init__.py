@@ -18,7 +18,6 @@ import stat
 import sys
 import shutil
 import stat
-import tempfile
 import subprocess
 import tarfile
 import time
@@ -28,7 +27,7 @@ import warnings
 from entropy.const import etpConst, const_get_stringtype, \
     const_convert_to_unicode, const_convert_to_rawstring, \
     const_setup_perms, const_setup_file, const_is_python3, \
-    const_debug_enabled
+    const_debug_enabled, const_mkdtemp, const_mkstemp
 from entropy.exceptions import FileNotFound, InvalidDependString, \
     InvalidAtom, EntropyException
 from entropy.output import darkred, darkgreen, brown, darkblue, teal, \
@@ -1019,7 +1018,7 @@ class PortagePlugin(SpmPlugin):
         tmp_fd, tmp_file = None, None
         debug_tmp_fd, debug_tmp_file = None, None
         try:
-            tmp_fd, tmp_file = tempfile.mkstemp(dir = file_save_dir,
+            tmp_fd, tmp_file = const_mkstemp(dir = file_save_dir,
                 prefix = "entropy.spm.Portage.generate_package._tar")
             os.close(tmp_fd)
             tmp_fd = None
@@ -1037,7 +1036,7 @@ class PortagePlugin(SpmPlugin):
                 m.update(repr(package))
                 debug_file_save_path = file_save_name + "." + m.hexdigest() + \
                     etpConst['packagesdebugext']
-                debug_tmp_fd, debug_tmp_file = tempfile.mkstemp(
+                debug_tmp_fd, debug_tmp_file = const_mkstemp(
                     dir = file_save_dir,
                     prefix = "entropy.spm.Portage.generate_package._debug_tar")
                 os.close(debug_tmp_fd)
@@ -1160,7 +1159,7 @@ class PortagePlugin(SpmPlugin):
                 warnings.warn("Something is wrong, no modinfo on the system")
                 return
 
-            tmp_fd, tmp_file = tempfile.mkstemp(
+            tmp_fd, tmp_file = const_mkstemp(
                 prefix="entropy.spm.portage._add_kernel_dependency_to_pkg")
             try:
                 with os.fdopen(tmp_fd, "w") as tmp_fw:
@@ -1240,7 +1239,7 @@ class PortagePlugin(SpmPlugin):
         raw_enc = etpConst['conf_raw_encoding']
 
         try:
-            tmp_fd, tmp_path = tempfile.mkstemp(
+            tmp_fd, tmp_path = const_mkstemp(
                 prefix="entropy.spm.__source_env_get_var")
 
             sts = subprocess.call(args, stdout = tmp_fd)
@@ -1308,8 +1307,7 @@ class PortagePlugin(SpmPlugin):
         data['datecreation'] = str(os.path.getmtime(package_file))
         data['size'] = str(entropy.tools.get_file_size(package_file))
 
-        tmp_dir = tempfile.mkdtemp(prefix="entropy.spm._extract",
-            dir=etpConst['entropyunpackdir'])
+        tmp_dir = const_mkdtemp(prefix="entropy.spm._extract")
         meta_dir = os.path.join(tmp_dir, "portage")
         pkg_dir = os.path.join(tmp_dir, "pkg")
         os.mkdir(meta_dir)
@@ -2066,7 +2064,8 @@ class PortagePlugin(SpmPlugin):
         portage_tmpdir_created = False # for pkg_postrm, pkg_prerm
 
         if portage_tmpdir is None:
-            portage_tmpdir = tempfile.mkdtemp()
+            # /tmp might be mounted using tmpfs, noexec, etc
+            portage_tmpdir = const_mkdtemp(prefix="tmpdir_doebuild")
             portage_tmpdir_created = True
         elif not os.path.isdir(portage_tmpdir):
             os.makedirs(portage_tmpdir, 0o744)
@@ -2137,7 +2136,7 @@ class PortagePlugin(SpmPlugin):
             splitter_err = None
             try:
                 if is_mute():
-                    tmp_fd, tmp_file = tempfile.mkstemp(
+                    tmp_fd, tmp_file = const_mkstemp(
                         prefix="entropy.spm.portage._portage_doebuild")
                     tmp_fw = os.fdopen(tmp_fd, "w")
                     sys.stdout = tmp_fw
@@ -3098,8 +3097,8 @@ class PortagePlugin(SpmPlugin):
             # lock vdb before making changes
             with self._PortageVdbLocker(self, root = root):
 
-                tmp_dir = tempfile.mkdtemp(dir=cat_dir,
-                    prefix="-MERGING-")
+                tmp_dir = const_mkdtemp(
+                    dir=cat_dir, prefix="-MERGING-")
 
                 vdb_failed = False
                 try:
@@ -3414,60 +3413,66 @@ class PortagePlugin(SpmPlugin):
     @staticmethod
     def _test_environment_bz2(package_path):
 
-        tmp_path = tempfile.mkdtemp()
-        xpaktools.extract_xpak(package_path, tmpdir = tmp_path)
-        if not os.listdir(tmp_path):
-            shutil.rmtree(tmp_path)
-            return 1, "unable to extract xpak metadata"
-
-        # make sure we have the environment.bz2 file to check
-        env_file = os.path.join(tmp_path, PortagePlugin.ENV_FILE_COMP)
-        if not (os.path.isfile(env_file) and os.access(env_file, os.R_OK)):
-            shutil.rmtree(tmp_path)
-            return 2, "unable to locate %s file" % (
-                PortagePlugin.ENV_FILE_COMP,)
-
-        # check if we have an alternate setting for LC*
-        sys_settings = SystemSettings()
-        srv_plug_id = etpConst['system_settings_plugins_ids']['server_plugin']
+        tmp_path = None
         try:
-            qa_langs = sys_settings[srv_plug_id]['server']['qa_langs']
-        except KeyError:
-            qa_langs = ["en_US", "C"]
+            tmp_path = const_mkdtemp(prefix="_test_environment_bz2")
 
-        qa_rlangs = [const_convert_to_rawstring("LC_ALL="+x) for x in qa_langs]
+            xpaktools.extract_xpak(package_path, tmpdir = tmp_path)
+            if not os.listdir(tmp_path):
+                return 1, "unable to extract xpak metadata"
 
-        valid_lc_all = False
-        lc_found = False
-        msg = None
-        lc_all_str = const_convert_to_rawstring("LC_ALL")
-        found_lang = None
-        bz_f = None
-        try:
+            # make sure we have the environment.bz2 file to check
+            env_file = os.path.join(tmp_path, PortagePlugin.ENV_FILE_COMP)
+            if not (os.path.isfile(env_file) and os.access(env_file, os.R_OK)):
+                return 2, "unable to locate %s file" % (
+                    PortagePlugin.ENV_FILE_COMP,)
 
-            # read env file
-            bz_f = bz2.BZ2File(env_file, "r")
+            # check if we have an alternate setting for LC*
+            sys_settings = SystemSettings()
+            plug_id = etpConst['system_settings_plugins_ids']['server_plugin']
+            try:
+                qa_langs = sys_settings[plug_id]['server']['qa_langs']
+            except KeyError:
+                qa_langs = ["en_US", "C"]
 
-            for line in bz_f.readlines():
-                if not line.startswith(lc_all_str):
-                    continue
-                lc_found = True
-                found_lang = line.strip()
-                for lang in qa_rlangs:
-                    if line.startswith(lang):
-                        valid_lc_all = True
-                        break
+            qa_rlangs = [const_convert_to_rawstring(
+                    "LC_ALL="+x) for x in qa_langs]
+
+            valid_lc_all = False
+            lc_found = False
+            msg = None
+            lc_all_str = const_convert_to_rawstring("LC_ALL")
+            found_lang = None
+            bz_f = None
+            try:
+
+                # read env file
+                bz_f = bz2.BZ2File(env_file, "r")
+
+                for line in bz_f.readlines():
+                    if not line.startswith(lc_all_str):
+                        continue
+                    lc_found = True
+                    found_lang = line.strip()
+                    for lang in qa_rlangs:
+                        if line.startswith(lang):
+                            valid_lc_all = True
+                            break
+            finally:
+                if bz_f is not None:
+                    bz_f.close()
+
+            env_rc = 0
+            if lc_found and (not valid_lc_all):
+                msg = "LC_ALL not set to => %s (but: %s)" % (
+                    qa_langs, found_lang,)
+                env_rc = 1
+
+            return env_rc, msg
+
         finally:
-            if bz_f is not None:
-                bz_f.close()
-
-        env_rc = 0
-        if lc_found and (not valid_lc_all):
-            msg = "LC_ALL not set to => %s (but: %s)" % (qa_langs, found_lang,)
-            env_rc = 1
-        shutil.rmtree(tmp_path)
-
-        return env_rc, msg
+            if tmp_path is not None:
+                shutil.rmtree(tmp_path)
 
     @staticmethod
     def _config_updates_make_conf(entropy_client, repo):

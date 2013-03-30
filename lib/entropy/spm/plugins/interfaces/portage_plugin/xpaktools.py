@@ -10,11 +10,11 @@
 
 """
 import sys
-import tempfile
 import os
 import errno
 import shutil
-from entropy.const import const_is_python3
+from entropy.const import etpConst, const_is_python3, const_mkdtemp, \
+    const_mkstemp
 from entropy.output import TextInterface
 from entropy.spm.plugins.factory import get_default_instance
 from entropy.spm.plugins.interfaces.portage_plugin import xpak
@@ -31,7 +31,7 @@ def extract_xpak(tbz2file, tmpdir = None):
     @rtype: 
     """
     # extract xpak content
-    tmp_fd, tmp_path = tempfile.mkstemp(
+    tmp_fd, tmp_path = const_mkstemp(
         prefix="entropy.spm.portage.extract_xpak")
     os.close(tmp_fd)
     try:
@@ -56,7 +56,7 @@ def read_xpak(tbz2file):
     @return: 
     @rtype: 
     """
-    tmp_fd, tmp_path = tempfile.mkstemp(
+    tmp_fd, tmp_path = const_mkstemp(
         prefix="entropy.spm.portage.read_xpak")
     os.close(tmp_fd)
     try:
@@ -81,7 +81,7 @@ def unpack_xpak(xpakfile, tmpdir = None):
     @rtype: 
     """
     if tmpdir is None:
-        tmpdir = tempfile.mkdtemp()
+        tmpdir = const_mkdtemp(prefix="unpack_xpak")
     elif not os.path.isdir(tmpdir):
         raise AttributeError("tmpdir %s does not exist" % (tmpdir,))
     try:

@@ -18,7 +18,6 @@ import sys
 import shutil
 import time
 import subprocess
-import tempfile
 import threading
 import codecs
 import copy
@@ -28,7 +27,8 @@ from entropy.i18n import _
 from entropy.const import etpConst, const_debug_write, etpSys, \
     const_setup_file, initconfig_entropy_constants, const_pid_exists, \
     const_setup_perms, const_isstring, const_convert_to_unicode, \
-    const_isnumber, const_convert_to_rawstring
+    const_isnumber, const_convert_to_rawstring, const_mkdtemp, \
+    const_mkstemp
 from entropy.exceptions import RepositoryError, SystemDatabaseError, \
     RepositoryPluginError, SecurityError, EntropyPackageException
 from entropy.db.skel import EntropyRepositoryBase
@@ -503,18 +503,6 @@ class RepositoryMixin:
         @rtype: bool
         @raise IOError: if there are problems parsing config files
         """
-        repo_d_conf = self._settings.get_setting_dirs_data(
-            )['repositories_conf_d']
-        conf_d_dir, conf_files_mtime, skipped_files, auto_upd = repo_d_conf
-        repo_confs = [conf_p for conf_p, mtime_p in conf_files_mtime]
-        # as per specifications, enabled config files handled by
-        # Entropy Client (see repositories.conf.d/README) start with
-        # entropy_ prefix.
-        base_name = "entropy_" + repository_id
-        enabled_conf_file = os.path.join(conf_d_dir, base_name)
-        # while disabled config files start with _
-        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
-
         # backward compatibility, handle repositories.conf
         repo_conf = self._settings.get_setting_files_data()['repositories']
         content = []
@@ -554,24 +542,13 @@ class RepositoryMixin:
             new_content.append(line)
         content = new_content
 
-        # enabling or disabling the repo is just a rename()
-        # away for the new style files in repositories.conf.d/
-        found_in_confd = False
+        parser = RepositoryConfigParser(encoding = enc)
         if enable:
-            src = disabled_conf_file
-            dest = enabled_conf_file
+            found_in_confd = parser.enable(repository_id)
         else:
-            src = enabled_conf_file
-            dest = disabled_conf_file
-        try:
-            os.rename(src, dest)
-            os.utime(dest, None)
+            found_in_confd = parser.disable(repository_id)
+        if found_in_confd:
             accomplished = True
-            found_in_confd = True
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                # do not handle EPERM ?
-                raise
 
         if enable and found_in_confd:
             # if the action is enable and the repository
@@ -598,18 +575,6 @@ class RepositoryMixin:
         @rtype: bool
         @raise IOError: if there are problems parsing config files
         """
-        repo_d_conf = self._settings.get_setting_dirs_data(
-            )['repositories_conf_d']
-        conf_d_dir, conf_files_mtime, skipped_files, auto_upd = repo_d_conf
-        repo_confs = [conf_p for conf_p, mtime_p in conf_files_mtime]
-        # as per specifications, enabled config files handled by
-        # Entropy Client (see repositories.conf.d/README) start with
-        # entropy_ prefix.
-        base_name = "entropy_" + repository_id
-        enabled_conf_file = os.path.join(conf_d_dir, base_name)
-        # while disabled config files start with _
-        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
-
         # backward compatibility, handle repositories.conf
         repo_conf = self._settings.get_setting_files_data()['repositories']
         content = []
@@ -642,19 +607,11 @@ class RepositoryMixin:
         content = new_content
 
         parser = RepositoryConfigParser(encoding = enc)
-        parser.write(
-            enabled_conf_file,
+        outcome = parser.add(
             repository_metadata['repoid'],
             repository_metadata['description'],
             repository_metadata['plain_databases'],
             repository_metadata['plain_packages'])
-
-        # if any disabled entry file is around, kill it with fire!
-        try:
-            os.remove(disabled_conf_file)
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
 
         # commit back changes to config file in both cases.
         # Add: we migrate to the new config file automatically
@@ -662,7 +619,7 @@ class RepositoryMixin:
         entropy.tools.atomic_write(
             repo_conf, "\n".join(content) + "\n", enc)
 
-        return True
+        return outcome
 
     def _conf_remove_repository(self, repository_id):
         """
@@ -674,18 +631,6 @@ class RepositoryMixin:
         @rtype: bool
         @raise IOError: if there are problems parsing config files
         """
-        repo_d_conf = self._settings.get_setting_dirs_data(
-            )['repositories_conf_d']
-        conf_d_dir, conf_files_mtime, skipped_files, auto_upd = repo_d_conf
-        repo_confs = [conf_p for conf_p, mtime_p in conf_files_mtime]
-        # as per specifications, enabled config files handled by
-        # Entropy Client (see repositories.conf.d/README) start with
-        # entropy_ prefix.
-        base_name = "entropy_" + repository_id
-        enabled_conf_file = os.path.join(conf_d_dir, base_name)
-        # while disabled config files start with _
-        disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
-
         # backward compatibility, handle repositories.conf
         repo_conf = self._settings.get_setting_files_data()['repositories']
         content = []
@@ -724,21 +669,10 @@ class RepositoryMixin:
             new_content.append(line)
         content = new_content
 
-        # remove mode
-        try:
-            os.remove(enabled_conf_file)
+        parser = RepositoryConfigParser(encoding = enc)
+        outcome = parser.remove(repository_id)
+        if outcome:
             accomplished = True
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
-        # since we want to remove, also drop disabled
-        # config files
-        try:
-            os.remove(disabled_conf_file)
-            accomplished = True
-        except OSError as err:
-            if err.errno != errno.ENOENT:
-                raise
 
         # commit back changes to config file in both cases.
         # Add: we migrate to the new config file automatically
@@ -894,7 +828,7 @@ class RepositoryMixin:
             doesn't contain a valid package repository.
         """
         basefile = os.path.basename(package_file_path)
-        db_dir = tempfile.mkdtemp()
+        db_dir = const_mkdtemp(prefix="add_package_repository")
         dbfile = os.path.join(db_dir, etpConst['etpdatabasefile'])
         dump_rc = entropy.tools.dump_entropy_metadata(package_file_path, dbfile)
         if not dump_rc:
@@ -904,7 +838,7 @@ class RepositoryMixin:
         if package_file_path.endswith(etpConst['packagesext_webinstall']):
             webinstall_package = True
             # unbzip2
-            tmp_fd, tmp_path = tempfile.mkstemp(dir = db_dir)
+            tmp_fd, tmp_path = const_mkstemp(dir = db_dir)
             try:
                 entropy.tools.uncompress_file(dbfile, tmp_path, bz2.BZ2File)
             finally:
@@ -1192,7 +1126,7 @@ class RepositoryMixin:
         @rtype: entropy.client.interfaces.db.GenericRepository
         """
         if temp_file is None:
-            tmp_fd, temp_file = tempfile.mkstemp(
+            tmp_fd, temp_file = const_mkstemp(
                 prefix="entropy.client.methods.open_temp_repository")
             os.close(tmp_fd)
         if dbname is not None:
@@ -2078,7 +2012,7 @@ class MiscMixin:
 
         for mirror in mirrors:
 
-            tmp_fd, tmp_path = tempfile.mkstemp(
+            tmp_fd, tmp_path = const_mkstemp(
                 prefix="entropy.client.methods.reorder_mirrors")
             try:
 
@@ -2330,7 +2264,7 @@ class MiscMixin:
             tmp_path = initialized_repository_path
             already_initialized = True
         else:
-            tmp_fd, tmp_path = tempfile.mkstemp(
+            tmp_fd, tmp_path = const_mkstemp(
                 prefix="entropy.client.methods._inject_edb")
 
         try:
@@ -2781,7 +2715,7 @@ class MatchMixin:
         enc = etpConst['conf_encoding']
         for mask_file in new_mask_list:
 
-            tmp_fd, tmp_path = tempfile.mkstemp(
+            tmp_fd, tmp_path = const_mkstemp(
                 prefix="entropy.client.methods._clear_match_gen")
 
             with codecs.open(mask_file, "r", encoding=enc) as mask_f:
