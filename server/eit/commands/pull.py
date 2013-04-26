@@ -16,7 +16,7 @@ import tempfile
 import codecs
 
 from entropy.const import etpConst, const_convert_to_unicode
-from entropy.exceptions import OnlineMirrorError
+from entropy.exceptions import OnlineMirrorError, RepositoryError
 from entropy.i18n import _
 from entropy.output import darkgreen, teal, red, darkred, brown, blue, \
     bold, purple
@@ -47,6 +47,7 @@ class EitPull(EitCommand):
         self._all = False
         self._repositories = []
         self._cleanup_only = False
+        self._conservative = False
 
     def _get_parser(self):
         self._real_command = sys.argv[0]
@@ -59,6 +60,10 @@ class EitPull(EitCommand):
 
         parser.add_argument("repo", nargs='?', default=None,
                             metavar="<repo>", help=_("repository"))
+        parser.add_argument("--conservative", action="store_true",
+                            help=_("do not execute implicit package name "
+                                   "and slot updates"),
+                            default=self._conservative)
         parser.add_argument("--quick", action="store_true",
                             default=False,
                             help=_("no stupid questions"))
@@ -86,7 +91,7 @@ class EitPull(EitCommand):
             if arg in outcome:
                 outcome = []
                 break
-        outcome += ["--quick", "--all"]
+        outcome += ["--conservative", "--quick", "--all"]
 
         def _startswith(string):
             if last_arg is not None:
@@ -130,6 +135,7 @@ repository) by pulling updated data.
         if nsargs.repo is not None:
             self._repositories.append(nsargs.repo)
         self._pretend = nsargs.pretend
+        self._entropy_class()._inhibit_treeupdates = nsargs.conservative
 
         return self._call_locked, [self._pull, nsargs.repo]
 
@@ -173,6 +179,22 @@ repository) by pulling updated data.
                 "%s: %s" % (darkred(_("Error")), err.value),
                 importance=1, level="error")
             return 1
+
+        # try (best-effort) to generate the index of the newly
+        # downloaded repository (indexing=True).
+        repo = None
+        try:
+            if sts == 0:
+                repo = entropy_server.open_server_repository(
+                    repository_id, read_only=False, indexing=True,
+                    lock_remote=False, do_treeupdates=False)
+        except RepositoryError:
+            repo = None
+        finally:
+            if repo is not None:
+                repo.commit()
+                entropy_server.close_repository(repo)
+
         EitPush.print_repository_status(entropy_server, repository_id)
         return sts
 
