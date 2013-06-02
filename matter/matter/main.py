@@ -20,7 +20,7 @@ from matter.binpms.base import BaseBinaryPMS, BaseBinaryResourceLock
 from matter.builder import PackageBuilder
 from matter.lock import MatterResourceLock
 from matter.output import purple, darkgreen, print_info, \
-    print_warning, print_error, is_stdout_a_tty, nocolor
+    print_generic, print_warning, print_error, is_stdout_a_tty, nocolor
 from matter.spec import SpecParser, MatterSpec
 from matter.utils import print_exception
 
@@ -85,6 +85,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
     not_installed = []
     not_merged = []
     uninstalled = []
+    missing_use = {}
     tainted_repositories = set()
     spec_count = 0
     tot_spec = len(specs)
@@ -113,6 +114,8 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 builder.get_not_merged_packages())
             uninstalled.extend(
                 builder.get_uninstalled_packages())
+            missing_use.update(
+                builder.get_missing_use_packages())
             preserved_libs = binary_pms.check_preserved_libraries(
                 emerge_config)
 
@@ -176,21 +179,36 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                     exit_st = _rc
 
     # print summary
-    print_info("")
-    print_info("Summary")
-    print_info("Packages built:\n  %s" % (
+    print_generic("")
+    print_generic("Summary")
+    print_generic("Packages built:\n  %s" % (
         "\n  ".join(sorted(completed)),))
-    print_info("Packages not built:\n  %s" % (
+    print_generic("Packages not built:\n  %s" % (
         "\n  ".join(sorted(not_merged)),))
-    print_info("Packages not found:\n  %s" % (
+    print_generic("Packages not found:\n  %s" % (
         "\n  ".join(sorted(not_found)),))
-    print_info("Packages not installed:\n  %s" % (
+    print_generic("Packages not installed:\n  %s" % (
         "\n  ".join(sorted(not_installed)),))
-    print_info("Packages uninstalled:\n  %s" % (
+    print_generic("Packages uninstalled:\n  %s" % (
         "\n  ".join(sorted(uninstalled)),))
-    print_info("Preserved libs: %s" % (
+
+    if missing_use:
+        print_generic("Packages not built due to missing USE flags:")
+        for atom in sorted(missing_use.keys()):
+            use_data = missing_use[atom]
+            use_l = []
+            for use in sorted(use_data["changes"]):
+                if use_data["changes"][use]:
+                    use_l.append(use)
+                else:
+                    use_l.append("-" + use)
+            print_generic("%s %s" % (
+                    use_data["pkg"].slot_atom, " ".join(use_l)))
+        print_generic("")
+
+    print_generic("Preserved libs: %s" % (
         preserved_libs,))
-    print_info("")
+    print_generic("")
 
     return _teardown(exit_st)
 

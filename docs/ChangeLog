@@ -1,3 +1,138 @@
+commit 6c802a88d6e0de83457e2d8b9c21d42d7a931c3b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 10:24:03 2013 +0200
+
+    Release Entropy 199
+
+commit f8d5d062abc4b05a62767b46cdea72993a64cd72
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 10:23:31 2013 +0200
+
+    [entropy.const] const_convert_to_{rawstring,unicode}: add float support
+
+commit 6d94e8687015b3607771f86880223f83572412ff
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 00:31:00 2013 +0200
+
+    [matter] add a final \n to the missing USE output
+
+commit 45ce99a0aa119f98b0c4c0d25f04368f3284f013
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 00:27:11 2013 +0200
+
+    [matter] import print_generic
+
+commit 9a5062648a4df734e33ab6c63467014536df7039
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 00:24:10 2013 +0200
+
+    [matter] print final status report using print_generic, avoids the timestamp prefix
+
+commit 7022d5cccc947bbff59cf3f67e5fd630d6086671
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 30 00:18:44 2013 +0200
+
+    [matter] log and report packages not built due to missing USE flags
+
+commit 414bb45243eeebfc5e6aec14ff04feba5e551159
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue May 28 10:39:29 2013 +0200
+
+    [services] entropy-pkgdelta-generator: check if "deltas" subdir exists before scanning
+
+commit 90f5b6e6863f8b5eba4b3722d374ffc54445ff93
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 22:19:03 2013 +0200
+
+    [entropy.spm] convert string to bytes before passing it to hashlib objects
+
+commit b71cea2ed5606625f637c9bb2e45cbd40b0825b8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 22:01:55 2013 +0200
+
+    [entropy.server] _calculate_sync_queues: generate upload_queue by interating over dict_items
+
+commit 5feee2abf0841077a5422fa3af3d73ff422a479a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:26:45 2013 +0200
+
+    Tagging Entropy version 198
+
+commit 01e7fa7db6022a94b01dcbfbca0fb3f367c2170c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:26:44 2013 +0200
+
+    Release Entropy 198
+
+commit 7c77c6e2df292b85de92b8920da4499e15ff9755
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:26:26 2013 +0200
+
+    [entropy.client.services] fix typo in method call
+
+commit 05d94e7e3b8fb1cfee27b8b37882e3ea2a643d30
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:24:46 2013 +0200
+
+    Tagging Entropy version 197
+
+commit 56a7c9fa3a9fa644f77aada24714763361f8ce9e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:24:45 2013 +0200
+
+    Release Entropy 197
+
+commit ccca9b2365e6c4765a1c2f0974535b942d1ea51d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:24:05 2013 +0200
+
+    [entropy.client.services] eapi value can be None if unset
+
+commit f8ac43d697f369654c9b8af0272f91d2e992c0d1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:20:48 2013 +0200
+
+    Tagging Entropy version 196
+
+commit 4902974b21bf97f341dcab04b0e6eaf1de4a93f1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:20:47 2013 +0200
+
+    Release Entropy 196
+
+commit af046cb92d1bfd3fd171337e6450f0f335baee79
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 11:20:11 2013 +0200
+
+    [entropy.services] make possible to block Entropy WebServices support client-side
+
+commit df6c71698399eec49bbf6517c0c4fcb75018cfba
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 10:24:37 2013 +0200
+
+    [solo.commands.update] drop download accounting for repositories, no longer used
+
+commit b4a6c405aa62374228a122cfadbe99e2dcf13a46
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 10:17:53 2013 +0200
+
+    [entropy.client.interfaces.db] lazily set _repo_eapi
+    
+    __get_repo_eapi() may be expensive and should only be called if
+    really needed.
+
+commit 93728a577491c630354dd470c12edf66dae918f1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon May 27 06:18:58 2013 +0200
+
+    [entropy.spm] PortagePlugin: add support for the new make.conf location
+
+commit c7f03d2e1a60a3066aa3e5bec4924820cd26ee39
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu May 16 11:37:25 2013 +0200
+
+    Tagging Entropy version 195
+
 commit 942ff7151f33d4c744dfd4b13f066f7a18f2031d
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Thu May 16 11:37:25 2013 +0200
