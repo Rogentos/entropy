@@ -237,6 +237,8 @@ class HtmlAntiMatterResult(BaseAntiMatterResult):
             txt = txt % ("downgradable",)
         elif self._nsargs.new:
             txt = txt % ("new",)
+        elif self._nsargs.not_installed:
+            txt = txt % ("not installed",)
         print_generic(txt)
 
         print_generic("<ul class='result'>")
@@ -321,6 +323,7 @@ class AntiMatter(object):
         """
         vardb, portdb = self._get_dbs()
         new_days_old_secs = self._nsargs.new_days_old * 3600 * 24
+        not_installed = self._nsargs.not_installed
         result = []
 
         cp_all = portdb.cp_all()
@@ -335,15 +338,16 @@ class AntiMatter(object):
                 print_warning("%s :: %s" % (count_str, package),
                               back=True)
 
-            cp_dir = os.path.join(root, package)
-            try:
-                mtime = os.path.getmtime(cp_dir)
-            except (OSError, IOError):
-                mtime = 0.0
+            if not not_installed:
+                cp_dir = os.path.join(root, package)
+                try:
+                    mtime = os.path.getmtime(cp_dir)
+                except (OSError, IOError):
+                    mtime = 0.0
 
-            if abs(time.time() - mtime) >= new_days_old_secs:
-                # not new enough
-                continue
+                if abs(time.time() - mtime) >= new_days_old_secs:
+                    # not new enough
+                    continue
 
             best_installed = portage.best(vardb.match(package))
             if best_installed:
@@ -446,7 +450,7 @@ class AntiMatter(object):
         Execute a scan of the system and return a BaseAntiMatterResult
         object.
         """
-        if self._nsargs.new:
+        if self._nsargs.new or self._nsargs.not_installed:
             result = self._new_scan()
         else:
             result = self._scan()
@@ -457,6 +461,8 @@ class AntiMatter(object):
             result = [x for x in result if x.upgrade()]
         elif self._nsargs.downgrade:
             result = [x for x in result if x.downgrade()]
+        elif self._nsargs.not_installed:
+            result = [x for x in result if not x.installed()]
 
         def _regex_filter(regex, x):
             target = x.target()
@@ -518,6 +524,9 @@ if __name__ == "__main__":
                           default=False,
                           help="list packages that have been recently "
                           "added")
+    mg_group.add_argument("--not-installed", "-i", action="store_true",
+                          default=False,
+                          help="list packages that haven't been installed")
 
     nsargs = None
     try:
