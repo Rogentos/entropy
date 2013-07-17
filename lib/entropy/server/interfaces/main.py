@@ -476,12 +476,16 @@ class RepositoryConfigParser(BaseConfigParser):
               with "base = true" will be considered. The base repository is the
               repository that is considered base for all the others
               (the main one).
+    - "exclude-qa": if set, its value can be either "true" or "false".
+                    The default value is "false". If "true", the repository is
+                    excluded from QA checks.
     """
 
     _SUPPORTED_KEYS = ("desc", "repo", "repo-only", "pkg-only",
-                       "base", "enabled")
+                       "base", "enabled", "exclude-qa")
 
     _DEFAULT_ENABLED_VALUE = True
+    _DEFAULT_QA_VALUE = False
     _DEFAULT_BASE_VALUE = False
 
     # Repository configuration file suggested prefix. If config files
@@ -537,7 +541,7 @@ class RepositoryConfigParser(BaseConfigParser):
         return base
 
     def add(self, repository_id, desc, repo, repo_only, pkg_only,
-            base, enabled = True):
+            base, enabled = True, exclude_qa = False):
         """
         Add a repository to the repository configuration files directory.
         Older repository configuration may get overwritten. This method
@@ -558,6 +562,8 @@ class RepositoryConfigParser(BaseConfigParser):
         @type base: bool
         @keyword enabled: True, if the repository is enabled
         @type enabled: bool
+        @keyword exclude_qa: True, if the repository should be excluded from QA
+        @type exclude_qa: bool
         """
         settings = SystemSettings()
         repo_d_conf = settings.get_setting_dirs_data()['repositories_conf_d']
@@ -571,7 +577,7 @@ class RepositoryConfigParser(BaseConfigParser):
         disabled_conf_file = os.path.join(conf_d_dir, "_" + base_name)
 
         self.write(enabled_conf_file, repository_id, desc, repo, repo_only,
-                   pkg_only, base, enabled = enabled)
+                   pkg_only, base, enabled = enabled, exclude_qa = exclude_qa)
 
         # if any disabled entry file is around, kill it with fire!
         try:
@@ -625,7 +631,7 @@ class RepositoryConfigParser(BaseConfigParser):
         return accomplished
 
     def write(self, path, repository_id, desc, repo, repo_only,
-              pkg_only, base, enabled = True):
+              pkg_only, base, enabled = True, exclude_qa = False):
         """
         Write the repository configuration to the given file.
 
@@ -646,11 +652,18 @@ class RepositoryConfigParser(BaseConfigParser):
         @type base: bool
         @keyword enabled: True, if the repository is enabled
         @type enabled: bool
+        @keyword exclude_qa: True, if the repository should be excluded from QA
+        @type exclude_qa: bool
         """
         if enabled:
             enabled_str = "true"
         else:
             enabled_str = "false"
+
+        if exclude_qa:
+            qa_str = "true"
+        else:
+            qa_str = "false"
 
         if base:
             base_str = "base = true"
@@ -682,6 +695,7 @@ class RepositoryConfigParser(BaseConfigParser):
             "repo_only": repo_only_str.rstrip(),
             "pkg_only": pkg_only_str.rstrip(),
             "enabled": enabled_str,
+            "exclude_qa": qa_str,
             "base": base_str,
         }
 
@@ -691,6 +705,7 @@ class RepositoryConfigParser(BaseConfigParser):
 
 [server=%(repository_id)s]
 %(base)s
+exclude-qa = %(exclude_qa)s
 desc = %(desc)s
 %(repos)s
 %(repo_only)s
@@ -789,6 +804,21 @@ enabled = %(enabled)s
         except KeyError:
             return self._DEFAULT_ENABLED_VALUE
 
+    def exclude_qa(self, repository_id):
+        """
+        Return whether the repository is excluded from QA.
+
+        @param repository_id: the repository identifier
+        @type repository_id: string
+        @return: the repository QA exclusion status
+        @rtype: bool
+        """
+        try:
+            exclude = self[repository_id]["exclude-qa"][0]
+            return exclude.strip().lower() == "true"
+        except KeyError:
+            return self._DEFAULT_QA_VALUE
+
 
 class ServerSystemSettingsPlugin(SystemSettingsPlugin):
 
@@ -838,6 +868,7 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
         repository_id = repo_split[0].strip()
         desc = repo_split[1].strip()
         uris = repo_split[2].strip().split()
+        exclude_qa = False  # not supported through server.conf
 
         repo_mirrors = []
         pkg_mirrors = []
@@ -864,11 +895,12 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
                 pkg_mirrors.append(uri)
 
         return repository_id, cls._generate_repository_metadata(
-            repository_id, desc, repo_mirrors, pkg_mirrors)
+            repository_id, desc, repo_mirrors, pkg_mirrors, exclude_qa)
 
     @classmethod
     def _generate_repository_metadata(cls, repository_id, desc,
-                                      repo_mirrors, pkg_mirrors):
+                                      repo_mirrors, pkg_mirrors,
+                                      exclude_qa):
         """
         Generate the repository metadata given raw information.
 
@@ -880,6 +912,8 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
         @type repo_mirrors: list
         @param pkg_mirrors: list of repository packages mirrors
         @type pkg_mirrors: list
+        @param exclude_qa: exclude from QA checks
+        @type exclude_qa: bool
         @return: the repository metadata
         @rtype: dict
         """
@@ -889,6 +923,7 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
         data['pkg_mirrors'] = pkg_mirrors[:]
         data['repo_mirrors'] = repo_mirrors[:]
         data['community'] = False
+        data['exclude_qa'] = exclude_qa
         return data
 
     def __generic_parser(self, filepath):
@@ -1322,6 +1357,8 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
                 if not ini_enabled:
                     continue
 
+                ini_exclude_qa = ini_parser.exclude_qa(ini_repository)
+
                 try:
                     ini_desc = ini_parser.desc(ini_repository)
                 except KeyError:
@@ -1346,7 +1383,8 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
                     pass
 
                 repo_data = srv_plugin_class._generate_repository_metadata(
-                    ini_repository, ini_desc, repo_mirrors, pkg_mirrors)
+                    ini_repository, ini_desc, repo_mirrors, pkg_mirrors,
+                    ini_exclude_qa)
                 data['repositories'][ini_repository] = repo_data
 
         env_community_mode = os.getenv("ETP_COMMUNITY_MODE")
@@ -1358,14 +1396,14 @@ class ServerSystemSettingsPlugin(SystemSettingsPlugin):
         # add system database if community repository mode is enabled
         if data['community_mode']:
             client_repository_id = InstalledPackagesRepository.NAME
-            data['repositories'][client_repository_id] = {}
-            mydata = {}
-            mydata['description'] = const_convert_to_unicode(
-                "Community Repositories System Repository")
-            mydata['pkg_mirrors'] = []
-            mydata['repo_mirrors'] = []
-            mydata['community'] = False
-            data['repositories'][client_repository_id].update(mydata)
+
+            mydata = srv_plugin_class._generate_repository_metadata(
+                client_repository_id,
+                const_convert_to_unicode(
+                    "Community Repositories System Repository"),
+                [],[], False)
+
+            data['repositories'][client_repository_id] = mydata
             srv_plugin_class.REPOSITORIES[client_repository_id] = \
                 mydata
             # installed packages repository is now the base repository
@@ -2174,6 +2212,17 @@ class Server(Client):
         """
         srv_set = self._settings[Server.SYSTEM_SETTINGS_PLG_ID]['server']
         return sorted(srv_set['repositories'])
+
+    def qa_repositories(self):
+        """
+        Return a list of QA-testable available Entropy Server repositories.
+
+        @return: list of QA-testable available Entropy Server repositories
+        @rtype: list
+        """
+        srv_set = self._settings[Server.SYSTEM_SETTINGS_PLG_ID]['server']
+        repos = srv_set['repositories']
+        return sorted([x for x, y in repos.items() if not y['exclude_qa']])
 
     def repository(self):
         """
@@ -4623,21 +4672,23 @@ class Server(Client):
 
         return set(missing_map.keys())
 
-    def removed_reverse_dependencies_test(self):
+    def removed_reverse_dependencies_test(self, repository_ids):
         """
         Test repositories against packages that have been removed
         from system (but not stored in an injected state) and are
         still in the repositories. For each of them, print a list
         of direct reverse dependencies that should be fixed.
 
+        @param repository_ids: repository identifiers to consider
+        @type repository_ids: list
         @return: an ordered list of orphaned package matches
             (sorted by atom).
         @rtype: list
         """
-        repository_ids = self.repositories()
+        all_repositories = self.repositories()
         _ignore, removed, _ignore = self.scan_package_changes(
-            repository_ids = repository_ids,
-            removal_repository_ids = repository_ids)
+            repository_ids = all_repositories,
+            removal_repository_ids = all_repositories)
         if not removed:
             return []
 
@@ -4653,9 +4704,15 @@ class Server(Client):
 
         rsort = lambda x: self.open_repository(
             x[1]).retrieveAtom(x[0])
-        r_matches = sorted(removed, key = rsort)
+        rfilter = lambda x: x[1] in repository_ids
+
+        # do not consider the repository if it's not
+        # in the list.
+        r_matches = list(filter(rfilter, removed))
+        r_matches.sort(key = rsort)
 
         for package_id, repository_id in r_matches:
+
             repo = self.open_repository(repository_id)
             r_atom = repo.retrieveAtom(package_id)
 
@@ -4669,9 +4726,29 @@ class Server(Client):
                 header = purple("  # ")
             )
 
-            reverse_package_as = repo.retrieveReverseDependencies(
-                package_id, atoms = True)
-            if reverse_package_as:
+            reverse_package_ids = repo.retrieveReverseDependencies(
+                package_id)
+
+            # filter out packages pointing to multiple slots
+            sure_reverse_package_ids = set()
+            for pkg_id in reverse_package_ids:
+                pkg_deps_size = 0
+                for pkg_dep in repo.retrieveDependencies(pkg_id):
+                    pkg_dep_ids, _rc = repo.atomMatch(
+                        pkg_dep, multiMatch = True)
+                    if package_id in pkg_dep_ids:
+                        # found my dependency back
+                        pkg_deps_slots = set(
+                            [repo.retrieveSlot(x) for x in pkg_dep_ids])
+                        pkg_deps_size = max(pkg_deps_size, len(pkg_deps_slots))
+
+                if pkg_deps_size == 1:
+                    # if there is only one slot, then it's likely that the
+                    # offending package will get its dependencies broken
+                    # if removed.
+                    sure_reverse_package_ids.add(pkg_id)
+
+            if sure_reverse_package_ids:
                 self.output(
                     "%s:" %(
                         red(_("Needed by")),
@@ -4680,7 +4757,11 @@ class Server(Client):
                     header = purple("    # ")
                 )
 
-            for rev_atom in reverse_package_as:
+            for rev_pkg_id in sure_reverse_package_ids:
+                rev_atom = repo.retrieveAtom(rev_pkg_id)
+                if rev_atom is None:
+                    rev_atom = _("corrupted entry")
+
                 self.output(
                     darkgreen(rev_atom),
                     level = "warning",
@@ -4713,13 +4794,15 @@ class Server(Client):
             unsatisfied_deps |= self.dependencies_test(base_repository_id,
                 match_repo = [base_repository_id])
 
-        all_repositories = self.repositories()
+        # given that we test all the repos, at least pick those where
+        # QA is allowed
+        all_repositories = self.qa_repositories()
         # test draining and merging as well, since we don't want
         # to get surprises when stuff is moved.
         unsatisfied_deps |= self.drained_dependencies_test(all_repositories)
         # check whethere there are packages no longer installed
         # that are still dependencies of other packages.
-        self.removed_reverse_dependencies_test()
+        self.removed_reverse_dependencies_test(all_repositories)
 
         # test library-level linking for injected packages as well.
         injected_matches = self.injected_library_dependencies_test(
@@ -5306,15 +5389,13 @@ class Server(Client):
         self._memory_db_srv_instances[repository_id] = repo
 
         # add to settings
-        repodata = {
-            'repoid': repository_id,
-            'description': description,
-            'pkg_mirrors': pkg_mirrors,
-            'repo_mirrors': repo_mirrors,
+        repodata = ServerSystemSettingsPlugin._generate_repository_metadata(
+            repository_id, description, repo_mirrors, pkg_mirrors, False)
+        repodata.update({
             'community': community_repo,
             'handler': '', # not supported
             '__temporary__': True,
-        }
+            })
         ServerSystemSettingsPlugin.extend_repository_metadata(
             self._settings, repository_id, repodata)
 
@@ -6861,55 +6942,66 @@ class Server(Client):
             # if repository_id is not the default one, we MUST skip this to
             # avoid touching what developer doesn't expect
             if dorm and (repository_id in removal_repository_ids):
+
+                tag = repo.retrieveTag(idpackage)
+                if tag:
+                    is_injected = repo.isInjected(idpackage)
+                    if not is_injected:
+                        to_be_injected.add((idpackage, repository_id))
+                        continue
+
                 trashed = self._is_spm_uid_trashed(counter)
                 if trashed:
                     # search into portage then
                     try:
                         key, slot = repo.retrieveKeySlot(idpackage)
+                    except TypeError:
+                        key, slot = None, None
+
+                    if (key is not None) and (slot is not None):
                         slot = slot.split(",")[0]
                         try:
-                            trashed = spm.match_installed_package(
-                                key + ":" + slot)
+                            if spm.match_installed_package(key + ":" + slot):
+                                trashed = True
+                            else:
+                                trashed = False
                         except KeyError:
-                            trashed = True
-                    except TypeError: # referred to retrieveKeySlot
-                        trashed = True
-                if not trashed:
+                            pass
 
-                    dbtag = repo.retrieveTag(idpackage)
-                    if dbtag:
-                        is_injected = repo.isInjected(idpackage)
-                        if not is_injected:
-                            to_be_injected.add((idpackage, repository_id))
+                if trashed:
+                    # spm uid is trashed, and it is still installed,
+                    # so there is nothing to do, really.
+                    continue
 
-                    elif exp_based_scope:
+                if not exp_based_scope:
+                    # expiration based scope is not enabled, so
+                    # the package must be accounted for removal.
+                    to_be_removed.add((idpackage, repository_id))
+                    continue
 
-                        # check if support for this is set
-                        plg_id = self.sys_settings_fatscope_plugin_id
-                        exp_data = self._settings[plg_id]['repos'].get(
-                            repository_id, set())
+                # check if support for this is set
+                plg_id = self.sys_settings_fatscope_plugin_id
+                exp_data = self._settings[plg_id]['repos'].get(
+                    repository_id, set())
 
-                        # only some packages are set, check if our is
-                        # in the list
-                        if (idpackage not in exp_data) and (-1 not in exp_data):
-                            to_be_removed.add((idpackage, repository_id))
-                            continue
+                # only some packages are set, check if our is
+                # in the list
+                if (idpackage not in exp_data) and (-1 not in exp_data):
+                    to_be_removed.add((idpackage, repository_id))
+                    continue
 
-                        idpackage_expired = self._is_match_expired((idpackage,
-                            repository_id,))
+                idpackage_expired = self._is_match_expired((idpackage,
+                    repository_id,))
 
-                        if idpackage_expired:
-                            # expired !!!
-                            # add this and its depends (reverse deps)
+                if idpackage_expired:
+                    # expired !!!
+                    # add this and its depends (reverse deps)
 
-                            rm_match = (idpackage, repository_id)
-                            #to_be_removed.add(rm_match)
-                            revdep_matches = self.get_reverse_queue([rm_match],
-                                system_packages = False)
-                            to_be_removed.update(revdep_matches)
-
-                    else:
-                        to_be_removed.add((idpackage, repository_id))
+                    rm_match = (idpackage, repository_id)
+                    #to_be_removed.add(rm_match)
+                    revdep_matches = self.get_reverse_queue([rm_match],
+                        system_packages = False)
+                    to_be_removed.update(revdep_matches)
 
         return to_be_added, to_be_removed, to_be_injected
 
