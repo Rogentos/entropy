@@ -551,7 +551,7 @@ class PortagePlugin(SpmPlugin):
         'global_make_profile': "/etc/make.profile",
     }
 
-    PLUGIN_API_VERSION = 11
+    PLUGIN_API_VERSION = 12
 
     SUPPORTED_MATCH_TYPES = [
         "bestmatch-visible", "cp-list", "list-visible", "match-all",
@@ -2167,15 +2167,21 @@ class PortagePlugin(SpmPlugin):
                     tmp_fd, tmp_file = const_mkstemp(
                         prefix="entropy.spm.portage._portage_doebuild")
                     tmp_fw = os.fdopen(tmp_fd, "w")
-                    sys.stdout = tmp_fw
-                    sys.stderr = tmp_fw
+                    fd_pipes = {
+                        0: sys.stdin.fileno(),
+                        1: tmp_fw.fileno(),
+                        2: tmp_fw.fileno(),
+                    }
                 else:
                     splitter_out = StdoutSplitter(
                         mydo, logger, sys.stdout)
                     splitter_err = StdoutSplitter(
                         mydo, logger, sys.stderr)
-                    sys.stdout = splitter_out
-                    sys.stderr = splitter_err
+                    fd_pipes = {
+                        0: sys.stdin.fileno(),
+                        1: splitter_out.fileno(),
+                        2: splitter_err.fileno(),
+                    }
 
                 rc = self._portage.doebuild(
                     str(myebuild),
@@ -2185,7 +2191,8 @@ class PortagePlugin(SpmPlugin):
                     tree = tree,
                     mydbapi = mydbapi,
                     vartree = vartree,
-                    debug = const_debug_enabled()
+                    debug = const_debug_enabled(),
+                    fd_pipes = fd_pipes
                 )
 
             except self._portage.exception.UnsupportedAPIException as err:
@@ -3825,6 +3832,26 @@ class PortagePlugin(SpmPlugin):
             os.path.join(portage_db_fakedir, "image"))
 
         return 0
+
+    def installed_mtime(self, root = None):
+        """
+        Reimplemented from SpmPlugin class.
+        """
+        dbapi = self._get_portage_vartree(root = root).dbapi
+        vdb_path = self._get_vdb_path(root = root)
+        try:
+            mtime = max(0.0, os.path.getmtime(vdb_path))
+        except OSError:
+            mtime = 0.0
+        for cpv in dbapi.cpv_all():
+            vdb_entry = os.path.join(vdb_path, cpv)
+            vdb_entry_parent = os.path.dirname(vdb_entry)
+            try:
+                mtime = max(mtime, os.path.getmtime(vdb_entry))
+                mtime = max(mtime, os.path.getmtime(vdb_entry_parent))
+            except OSError:
+                pass
+        return mtime
 
     def _get_portage_vartree(self, root = None):
 
