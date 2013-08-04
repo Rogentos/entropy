@@ -1,29 +1,19 @@
 #!/usr/bin/python
 import sys
-sys.path.insert(0, '/usr/lib/entropy/lib')
-sys.path.insert(0, '/usr/lib/entropy/server')
-sys.path.insert(0, '/usr/lib/entropy/client')
-sys.path.insert(0, '../lib')
-sys.path.insert(0, '../server')
-sys.path.insert(0, '../client')
+sys.path.insert(0, "/usr/lib/entropy/lib")
+sys.path.insert(0, "/usr/lib/entropy/client")
+sys.path.insert(0, "../lib")
+sys.path.insert(0, "../client")
 
 import os
-import subprocess
-import errno
-import codecs
 import argparse
 
-from entropy.const import etpConst, const_convert_to_unicode, \
-    const_convert_to_rawstring
-from entropy.output import teal, purple, darkgreen, blue, brown, print_info, \
-    red, nocolor, print_warning, print_error
-from entropy.exceptions import DependenciesNotRemovable
+from entropy.output import brown, print_warning, print_error, teal
 from entropy.i18n import _
 from entropy.client.interfaces import Client
 import entropy.dep
 import entropy.tools
 
-# solo modules
 from solo.commands.install import SoloInstall
 from solo.utils import print_package_info
 
