@@ -167,42 +167,6 @@ class CalculatorsMixin:
             if reponame in conflictingRevisions:
                 return (results[reponame], reponame)
 
-    def __validate_atom_match_cache(self, cached_obj, multi_match,
-        extended_results, multi_repo):
-
-        data, rc = cached_obj
-        if rc == 1:
-            return cached_obj
-
-        if multi_repo or multi_match:
-            # set([(14789, 'sabayonlinux.org'), (14479, 'sabayonlinux.org')])
-            matches = data
-            if extended_results:
-                # set([((14789, '3.3.8b', '', 0), 'sabayonlinux.org')])
-                matches = [(x[0][0], x[1],) for x in data]
-            for m_id, m_repo in matches:
-                # NOTE: there is a bug up the queue somewhere
-                # but current error report tool didn't provide full
-                # stack variables (only for the innermost frame)
-                #if isinstance(m_id, tuple):
-                #    m_id = m_id[0]
-                m_db = self.open_repository(m_repo)
-                if not m_db.isPackageIdAvailable(m_id):
-                    return None
-        else:
-            # (14479, 'sabayonlinux.org')
-            m_id, m_repo = cached_obj
-            if extended_results:
-                # ((14479, '4.4.2', '', 0), 'sabayonlinux.org')
-                m_id, m_repo = cached_obj[0][0], cached_obj[1]
-            m_db = self.open_repository(m_repo)
-            if not const_isnumber(m_id):
-                return None
-            if not m_db.isPackageIdAvailable(m_id):
-                return None
-
-        return cached_obj
-
     def atom_match(self, atom, match_slot = None, mask_filter = True,
             multi_match = False, multi_repo = False, match_repo = None,
             extended_results = False, use_cache = True):
@@ -214,32 +178,26 @@ class CalculatorsMixin:
         atom, repos = entropy.dep.dep_get_match_in_repos(atom)
         if (match_repo is None) and (repos is not None):
             match_repo = repos
+        if match_repo is None:
+            match_repo = tuple()
 
-        u_hash = ""
-        k_ms = "//"
-        if isinstance(match_repo, (list, tuple, set)):
-            u_hash = hash(tuple(match_repo))
-        if const_isstring(match_slot):
-            k_ms = match_slot
-        repos_ck = self._all_repositories_hash()
-
-        c_hash = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % (
-            repos_ck,
-            atom, k_ms, mask_filter,
-            str(tuple(self._enabled_repos)),
-            str(tuple(self._settings['repositories']['available'])),
-            multi_match, multi_repo, extended_results, u_hash,
-        )
-        c_hash = "%s%s" % (EntropyCacher.CACHE_IDS['atom_match'], hash(c_hash),)
-
+        cache_key = None
         if self.xcache and use_cache:
-            cached = self._cacher.pop(c_hash)
-            if cached is not None:
-                try:
-                    cached = self.__validate_atom_match_cache(cached,
-                        multi_match, extended_results, multi_repo)
-                except (TypeError, ValueError, IndexError, KeyError,):
-                    cached = None
+            sha = hashlib.sha1()
+
+            cache_s = "a{%s}mr{%s}ms{%s}rh{%s}mf{%s}er{%s}ar{%s}s{%s;%s;%s}" % (
+                atom, ";".join(match_repo), match_slot,
+                self._all_repositories_hash(), mask_filter,
+                ";".join(self._enabled_repos),
+                ";".join(self._settings['repositories']['available']),
+                multi_match, multi_repo, extended_results,
+                )
+            sha.update(const_convert_to_rawstring(cache_s))
+
+            cache_key = "%s%s" % (
+                EntropyCacher.CACHE_IDS['atom_match'], sha.hexdigest(),)
+
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -371,8 +329,8 @@ class CalculatorsMixin:
                         dbpkginfo = (
                             set([(x, dbpkginfo[1]) for x in query_data]), 0)
 
-        if self.xcache and use_cache:
-            self._cacher.push(c_hash, dbpkginfo)
+        if cache_key is not None:
+            self._cacher.push(cache_key, dbpkginfo)
 
         return dbpkginfo
 
@@ -398,25 +356,22 @@ class CalculatorsMixin:
             repositories = self.repositories()[:]
             repositories.insert(0, InstalledPackagesRepository.NAME)
 
-        u_hash = ""
-        if isinstance(repositories, (list, tuple, set)):
-            u_hash = hash(tuple(repositories))
-        repos_ck = self._all_repositories_hash()
-
-        c_hash = "%s|%s|%s|%s|%s|%s" % (
-            repos_ck,
-            keyword,
-            description,
-            str(tuple(repositories)),
-            str(tuple(self._settings['repositories']['available'])),
-            u_hash
-        )
-        c_hash = "%s%s" % (
-            EntropyCacher.CACHE_IDS['atom_search'],
-            hash(c_hash),)
-
+        cache_key = None
         if self.xcache and use_cache:
-            cached = self._cacher.pop(c_hash)
+            sha = hashlib.sha1()
+
+            cache_s = "k{%s}re{%s}de{%s}rh{%s}er{%s}ar{%s}" % (
+                keyword, ";".join(repositories), description,
+                self._all_repositories_hash(),
+                ";".join(self._enabled_repos),
+                ";".join(self._settings['repositories']['available']),
+                )
+            sha.update(const_convert_to_rawstring(cache_s))
+
+            cache_key = "%s%s" % (
+                EntropyCacher.CACHE_IDS['atom_search'], sha.hexdigest(),)
+
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -466,8 +421,8 @@ class CalculatorsMixin:
 
             matches_cache.clear()
 
-        if self.xcache and use_cache:
-            self._cacher.push(c_hash, matches)
+        if cache_key is not None:
+            self._cacher.push(cache_key, matches)
 
         return matches
 
@@ -2360,14 +2315,20 @@ class CalculatorsMixin:
                         for x in matched_atoms], deep, recursive, empty,
                         system_packages, elf_needed_scanning))
 
-        c_hash = "%s%s" % (
-            EntropyCacher.CACHE_IDS['depends_tree'],
-                hash("%s|%s|%s|%s|%s|%s" % (tuple(sorted(matched_atoms)), deep,
-                    recursive, empty, system_packages, elf_needed_scanning,),
-            ),
-        )
+        cache_key = None
         if self.xcache:
-            cached = self._cacher.pop(c_hash)
+            sha = hashlib.sha1()
+
+            cache_s = "ma{%s}s{%s;%s;%s;%s;%s}" % (
+                ";".join(["%s" % (x,) for x in sorted(matched_atoms)]),
+                deep, recursive, empty, system_packages,
+                elf_needed_scanning,)
+            sha.update(const_convert_to_rawstring(cache_s))
+
+            cache_key = "%s%s" % (
+                EntropyCacher.CACHE_IDS['depends_tree'], sha.hexdigest(),)
+
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -2762,8 +2723,9 @@ class CalculatorsMixin:
 
         graph.destroy()
 
-        if self.xcache:
-            self._cacher.push(c_hash, deptree)
+        if cache_key is not None:
+            self._cacher.push(cache_key, deptree)
+
         return deptree
 
     def calculate_masked_packages(self, use_cache = True):
@@ -3374,12 +3336,18 @@ class CalculatorsMixin:
 
     def check_package_update(self, atom, deep = False):
 
-        c_hash = "%s%s" % (EntropyCacher.CACHE_IDS['check_package_update'],
-                hash("%s|%s" % (atom, deep,)
-            ),
-        )
+        cache_key = None
         if self.xcache:
-            cached = self._cacher.pop(c_hash)
+            sha = hashlib.sha1()
+
+            cache_s = "{%s;%s}" % (atom, deep,)
+            sha.update(const_convert_to_rawstring(cache_s))
+
+            cache_key = "%s%s" % (
+                EntropyCacher.CACHE_IDS['check_package_update'],
+                sha.hexdigest(),)
+
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -3404,8 +3372,9 @@ class CalculatorsMixin:
                     found = True
             matched = self.atom_match(pkg_match)
 
-        if self.xcache:
-            self._cacher.push(c_hash, (found, matched))
+        if cache_key is not None:
+            self._cacher.push(cache_key, (found, matched))
+
         return found, matched
 
     def validate_package_removal(self, package_id, repo_id = None):
