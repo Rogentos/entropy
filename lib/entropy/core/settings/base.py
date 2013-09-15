@@ -26,7 +26,7 @@ import threading
 from entropy.const import etpConst, etpSys, const_setup_perms, \
     const_secure_config_file, const_set_nice_level, const_isunicode, \
     const_convert_to_unicode, const_convert_to_rawstring, \
-    const_debug_write, const_is_python3
+    const_debug_write, const_is_python3, const_file_readable
 from entropy.core import Singleton, EntropyPluginStore, BaseConfigParser
 from entropy.cache import EntropyCacher
 from entropy.core.settings.plugins.skel import SystemSettingsPlugin
@@ -730,21 +730,28 @@ class SystemSettings(Singleton, EntropyPluginStore):
                 in conf_d_descriptors:
             conf_dir = base_dir + os.path.sep + rel_dir
             self.__setting_dirs[setting_id] = [conf_dir, [], [], auto_update]
-            if not (os.path.isdir(conf_dir) and \
-                        os.access(conf_dir, os.R_OK)):
+
+            try:
+                dir_cont = list(os.listdir(conf_dir))
+            except (OSError, IOError):
                 continue
 
             conf_files = []
-            try:
-                conf_files += [os.path.join(conf_dir, x) for x in \
-                                      os.listdir(conf_dir)]
-            except (OSError, IOError):
-                continue
-            conf_files = [x for x in conf_files if \
-                os.path.isfile(x) and os.access(x, os.R_OK) \
-                and not os.path.basename(x).startswith(".keep") \
-                and os.path.basename(x) != "README" \
-                and not os.path.basename(x).endswith(".example")]
+            for item in dir_cont:
+                if item == "README":
+                    continue
+                if item.startswith(".keep"):
+                    continue
+                if item.endswith(".example"):
+                    continue
+
+                conf_file = os.path.join(conf_dir, item)
+                if not os.path.isfile(conf_file):
+                    continue
+
+                if const_file_readable(conf_file):
+                    conf_files.append(conf_file)
+
             # ignore files starting with _
             skipped_conf_files = [x for x in conf_files if \
                 os.path.basename(x).startswith("_")]
@@ -979,10 +986,20 @@ class SystemSettings(Singleton, EntropyPluginStore):
         # user defined package sets
         sets_dir = SystemSettings.packages_sets_directory()
         pkg_set_data = {}
-        if (os.path.isdir(sets_dir) and os.access(sets_dir, os.R_OK)):
-            set_files = [x for x in os.listdir(sets_dir) if \
-                (os.path.isfile(os.path.join(sets_dir, x)) and \
-                os.access(os.path.join(sets_dir, x), os.R_OK))]
+
+        try:
+            dir_list = list(os.listdir(sets_dir))
+        except (OSError, IOError):
+            dir_list = None
+
+        if dir_list is not None:
+
+            set_files = []
+            for item in dir_list:
+                set_file = os.path.join(sets_dir, item)
+                if const_file_readable(set_file):
+                    set_files.append(set_file)
+
             for set_file in set_files:
                 try:
                     set_file = const_convert_to_unicode(
@@ -1482,36 +1499,56 @@ class SystemSettings(Singleton, EntropyPluginStore):
         cache_obj = {'mtime': mtime,}
 
         enc = etpConst['conf_encoding']
+        hash_data = None
         try:
             with codecs.open(hw_hash_file, "r", encoding=enc) as hash_f:
                 hash_data = hash_f.readline().strip()
-            cache_obj['data'] = hash_data
-            self.__mtime_cache[cache_key] = cache_obj
-            return hash_data
+
         except IOError as err:
             if err.errno not in (errno.ENOENT, errno.EPERM):
                 raise
 
+        if hash_data is not None:
+            cache_obj['data'] = hash_data
+            self.__mtime_cache[cache_key] = cache_obj
+            return hash_data
+
         hash_file_dir = os.path.dirname(hw_hash_file)
         hw_hash_exec = etpConst['etp_hw_hash_gen']
-        if os.access(hash_file_dir, os.W_OK) and \
-            os.access(hw_hash_exec, os.X_OK | os.R_OK) and \
-            os.path.isfile(hw_hash_exec):
 
-            pipe = os.popen('{ ' + hw_hash_exec + '; } 2>&1', 'r')
+        pipe = None
+        try:
+            try:
+                pipe = os.popen('{ ' + hw_hash_exec + '; } 2>&1', 'r')
+            except (OSError, IOError):
+                return None
+
             hash_data = pipe.read().strip()
             sts = pipe.close()
+            pipe = None
+
             if sts is not None:
                 cache_obj['data'] = None
                 self.__mtime_cache[cache_key] = cache_obj
                 return None
 
+            # expecting ascii cruft, don't worry about hash_data type
             with codecs.open(hw_hash_file, "w", encoding=enc) as hash_f:
                 hash_f.write(hash_data)
                 hash_f.flush()
+
             cache_obj['data'] = hash_data
             self.__mtime_cache[cache_key] = cache_obj
             return hash_data
+
+        finally:
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except (OSError, IOError):
+                    # this handles the gap between .close()
+                    # and = None
+                    pass
 
     def _system_rev_symlinks_parser(self):
         """
@@ -1562,8 +1599,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
             'spm_backend': None,
         }
 
-        if not (os.path.isfile(etp_conf) and \
-            os.access(etp_conf, os.R_OK)):
+        if const_file_readable(etp_conf):
             cache_obj['data'] = data
             self.__mtime_cache[cache_key] = cache_obj
             return data
@@ -1782,11 +1818,13 @@ class SystemSettings(Singleton, EntropyPluginStore):
         data['dbrevision'] = "0"
         dbrevision_file = os.path.join(data['dbpath'],
             etpConst['etpdatabaserevisionfile'])
-        if os.path.isfile(dbrevision_file) and \
-            os.access(dbrevision_file, os.R_OK):
+
+        try:
             enc = etpConst['conf_encoding']
             with codecs.open(dbrevision_file, "r", encoding=enc) as dbrev_f:
                 data['dbrevision'] = dbrev_f.readline().strip()
+        except (OSError, IOError):
+            pass
 
         # setup GPG key path
         data['gpg_pubkey'] = data['dbpath'] + os.path.sep + \
@@ -1842,7 +1880,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
             'differential_update': True,
         }
 
-        if not (os.path.isfile(repo_conf) and os.access(repo_conf, os.R_OK)):
+        if const_file_readable(repo_conf):
             return data
 
         enc = etpConst['conf_encoding']
@@ -2087,8 +2125,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
                 data['product'],)
 
             repo_db_path_mtime = os.path.join(dmp_path, repo_mtime_fn)
-            if os.path.isfile(repo_db_path) and \
-                os.access(repo_db_path, os.R_OK):
+            if os.path.isfile(repo_db_path):
                 valid = self.validate_entropy_cache(repo_db_path,
                     repo_db_path_mtime, repoid = repoid)
                 if not valid:
@@ -2108,11 +2145,11 @@ class SystemSettings(Singleton, EntropyPluginStore):
             mirrors_file = os.path.join(obj['dbpath'],
                 etpConst['etpdatabasemirrorsfile'])
 
-            raw_mirrors = []
-            if (os.path.isfile(mirrors_file) and \
-                os.access(mirrors_file, os.R_OK)):
+            try:
                 raw_mirrors = entropy.tools.generic_file_content_parser(
                     mirrors_file, encoding = etpConst['conf_encoding'])
+            except (OSError, IOError):
+                raw_mirrors = []
 
             mirrors_data = []
             for mirror in raw_mirrors:
@@ -2133,11 +2170,12 @@ class SystemSettings(Singleton, EntropyPluginStore):
             # they are listed on top.
             fallback_mirrors_file = os.path.join(obj['dbpath'],
                 etpConst['etpdatabasefallbackmirrorsfile'])
-            fallback_mirrors = []
-            if os.path.isfile(fallback_mirrors_file) and \
-                os.access(fallback_mirrors_file, os.R_OK):
+
+            try:
                 fallback_mirrors = entropy.tools.generic_file_content_parser(
                     fallback_mirrors_file, encoding = etpConst['conf_encoding'])
+            except (OSError, IOError):
+                fallback_mirrors = []
 
             pkgs_map = {}
             if fallback_mirrors:

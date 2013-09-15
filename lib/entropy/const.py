@@ -747,12 +747,14 @@ def const_read_entropy_release():
     if not os.path.isfile(revision_file):
         revision_file = os.path.join(etpConst['installdir'],
             'lib/entropy/revision')
-    if os.path.isfile(revision_file) and \
-        os.access(revision_file, os.R_OK):
 
+    try:
         with codecs.open(revision_file, "r", encoding=ENCODING) as rev_f:
             myrev = rev_f.readline().strip()
             etpConst['entropyversion'] = myrev
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
 
 def const_pid_exists(pid):
     """
@@ -1098,6 +1100,37 @@ def const_set_chmod(myfile, chmod):
     cur_mod = const_get_chmod(myfile)
     if cur_mod != oct(chmod):
         os.chmod(myfile, chmod)
+
+def const_file_readable(path):
+    """
+    Return whether path points to a readable file.
+
+    @param path: path to a file
+    @type path: string
+    @return: True, if file exists and is readable
+    @rtype: bool
+    """
+    try:
+        with open(path, "r") as f:
+            return True
+    except (OSError, IOError):
+        return False
+
+def const_dir_readable(dir_path):
+    """
+    Return whether path points to a readable directory.
+    Readable directory is one that you can read the content.
+
+    @param path: path to a directory
+    @type path: string
+    @return: True, if directory exists and is readable
+    @rtype: bool
+    """
+    try:
+        os.listdir(dir_path)
+        return True
+    except (OSError, IOError):
+        return False
 
 def const_get_entropy_gid():
     """

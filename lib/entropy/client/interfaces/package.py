@@ -844,28 +844,43 @@ class Package:
         download_url = inst_repo.retrieveDownloadURL(pkg_id)
         installed_fetch_path = self.__get_fetch_disk_path(download_url)
 
-        if os.path.isfile(installed_fetch_path) and \
-            os.access(installed_fetch_path, os.R_OK | os.F_OK):
-            copied = False
+        try:
+            shutil.copyfile(installed_fetch_path, fetch_path)
+        except (OSError, IOError, shutil.Error) as err:
+            const_debug_write(
+                __name__,
+                "_setup_differential_download(%s), copyfile error: %s" % (
+                    url, err))
             try:
-                shutil.copyfile(installed_fetch_path, fetch_path)
-                user = os.stat(installed_fetch_path)[stat.ST_UID]
-                group = os.stat(installed_fetch_path)[stat.ST_GID]
-                os.chown(fetch_path, user, group)
-                shutil.copystat(installed_fetch_path, fetch_path)
-                copied = True
-            except (OSError, IOError, shutil.Error):
-                try:
-                    os.remove(fetch_path)
-                except OSError:
-                    pass
-            const_debug_write(__name__,
-                "_setup_differential_download(%s) %s %s => %s" % (
-                    url, "copied", copied, fetch_path))
-        else:
-            const_debug_write(__name__,
-                "_setup_differential_download(%s) %s" % (
-                    url, "no installed package file found"))
+                os.remove(fetch_path)
+            except OSError:
+                pass
+            return
+
+        try:
+            user = os.stat(installed_fetch_path)[stat.ST_UID]
+            group = os.stat(installed_fetch_path)[stat.ST_GID]
+            os.chown(fetch_path, user, group)
+        except (OSError, IOError) as err:
+            const_debug_write(
+                __name__,
+                "_setup_differential_download(%s), chown error: %s" % (
+                    url, err))
+            return
+
+        try:
+            shutil.copystat(installed_fetch_path, fetch_path)
+        except (OSError, IOError, shutil.Error) as err:
+            const_debug_write(
+                __name__,
+                "_setup_differential_download(%s), copystat error: %s" % (
+                    url, err))
+            return
+
+        const_debug_write(
+            __name__,
+            "_setup_differential_download(%s) copied to %s" % (
+                url, fetch_path))
 
     def __approve_edelta(self, url, installed_package_id, package_digest):
         """
@@ -881,21 +896,27 @@ class Package:
         installed_digest = inst_repo.retrieveDigest(installed_package_id)
         installed_fetch_path = self.__get_fetch_disk_path(download_url)
 
-        if os.path.isfile(installed_fetch_path) and \
-            os.access(installed_fetch_path, os.R_OK | os.F_OK):
-
+        edelta_local_approved = False
+        try:
             edelta_local_approved = entropy.tools.compare_md5(
                 installed_fetch_path, installed_digest)
+        except (OSError, IOError) as err:
+            const_debug_write(
+                __name__, "__approve_edelta, error: %s" % (err,))
+            return
 
-            if edelta_local_approved:
-                hash_tag = installed_digest + package_digest
-                edelta_file_name = \
-                    entropy.tools.generate_entropy_delta_file_name(
-                        os.path.basename(download_url),
-                        os.path.basename(url), hash_tag)
-                edelta_url = os.path.join(os.path.dirname(url),
-                    etpConst['packagesdeltasubdir'], edelta_file_name)
-                return edelta_url, installed_fetch_path
+        if edelta_local_approved:
+            hash_tag = installed_digest + package_digest
+            edelta_file_name = entropy.tools.generate_entropy_delta_file_name(
+                os.path.basename(download_url),
+                os.path.basename(url),
+                hash_tag)
+            edelta_url = os.path.join(
+                os.path.dirname(url),
+                etpConst['packagesdeltasubdir'],
+                edelta_file_name)
+
+            return edelta_url, installed_fetch_path
 
     def __try_edelta_multifetch(self, url_data, resume):
 
@@ -1422,32 +1443,39 @@ class Package:
         pkg_disk_path_mtime = pkg_disk_path + etpConst['packagemtimefileext']
 
         def do_mtime_validation():
-            if not (os.path.isfile(pkg_disk_path_mtime) and \
-                os.access(pkg_disk_path_mtime, os.R_OK)):
-                return 1
-            if not (os.path.isfile(pkg_disk_path) and \
-                os.access(pkg_disk_path, os.R_OK)):
-                return 2
-
             enc = etpConst['conf_encoding']
-            with codecs.open(pkg_disk_path_mtime, "r", encoding=enc) as mt_f:
-                stored_mtime = mt_f.read().strip()
+            try:
+                with codecs.open(pkg_disk_path_mtime,
+                                 "r", encoding=enc) as mt_f:
+                    stored_mtime = mt_f.read().strip()
+            except (OSError, IOError) as err:
+                if err.errno != errno.ENOENT:
+                    raise
+                return 1
 
             # get pkg mtime
-            cur_mtime = str(os.path.getmtime(pkg_disk_path))
+            try:
+                cur_mtime = str(os.path.getmtime(pkg_disk_path))
+            except (OSError, IOError) as err:
+                if err.errno != errno.ENOENT:
+                    raise
+                return 2
+
             if cur_mtime == stored_mtime:
                 return 0
             return 1
 
         def do_store_mtime():
-            if not (os.path.isfile(pkg_disk_path) and \
-                os.access(pkg_disk_path, os.R_OK)):
-                return
             enc = etpConst['conf_encoding']
-            with codecs.open(pkg_disk_path_mtime, "w", encoding=enc) as mt_f:
-                cur_mtime = str(os.path.getmtime(pkg_disk_path))
-                mt_f.write(cur_mtime)
-                mt_f.flush()
+            try:
+                with codecs.open(pkg_disk_path_mtime,
+                                 "w", encoding=enc) as mt_f:
+                    cur_mtime = str(os.path.getmtime(pkg_disk_path))
+                    mt_f.write(cur_mtime)
+                    mt_f.flush()
+            except (OSError, IOError) as err:
+                if err.errno != errno.ENOENT:
+                    raise
 
         def do_compare_gpg(pkg_path, hash_val):
 
@@ -1941,11 +1969,15 @@ class Package:
             if in_mask:
 
                 oldprot_md5 = automerge_metadata.get(item)
-                if oldprot_md5 and os.path.exists(protected_item_test) and \
-                    os.access(protected_item_test, os.R_OK):
+                if oldprot_md5:
 
-                    in_system_md5 = entropy.tools.md5sum(
-                        protected_item_test)
+                    try:
+                        in_system_md5 = entropy.tools.md5sum(
+                            protected_item_test)
+                    except (OSError, IOError) as err:
+                        if err.errno != errno.ENOENT:
+                            raise
+                        in_system_md5 = "?"
 
                     if oldprot_md5 == in_system_md5:
                         prot_msg = _("Removing config file, never modified")
@@ -2806,8 +2838,7 @@ class Package:
                     if not _symfail:
                         os.symlink(tolink, rootdir)
 
-            elif not os.path.isdir(rootdir) and not \
-                os.access(rootdir, os.R_OK):
+            elif not os.path.isdir(rootdir):
                 # directory not found, we need to create it
 
                 try:
@@ -2817,17 +2848,15 @@ class Package:
                     os.makedirs(rootdir)
 
 
-            if not os.path.islink(rootdir) and os.access(rootdir, os.W_OK):
+            if not os.path.islink(rootdir):
 
                 # symlink doesn't need permissions, also
                 # until os.walk ends they might be broken
-                # NOTE: also, added os.access() check because
-                # there might be directories/files unwritable
-                # what to do otherwise?
                 user = os.stat(imagepath_dir)[stat.ST_UID]
                 group = os.stat(imagepath_dir)[stat.ST_GID]
                 try:
                     os.chown(rootdir, user, group)
+                    shutil.copystat(imagepath_dir, rootdir)
                 except (OSError, IOError) as err:
                     self._entropy.logger.log(
                         "[Package]",
@@ -2836,22 +2865,26 @@ class Package:
                         "%s, %s, errno: %s" % (
                                 rootdir,
                                 err,
-                                getattr(err, "errno", -1),
+                                err.errno,
                             )
                     )
-                    mytxt = "%s: %s, %s, %s" % (
-                        brown("Error during workdir setup"),
-                        purple(rootdir), err,
-                        getattr(err, "errno", -1)
-                    )
-                    self._entropy.output(
-                        mytxt,
-                        importance = 1,
-                        level = "error",
-                        header = darkred(" !!! ")
-                    )
-                    return 4
-                shutil.copystat(imagepath_dir, rootdir)
+                    # skip some errors because we may have
+                    # unwritable directories
+                    if err.errno not in (
+                            errno.EPERM, errno.ENOENT,
+                            errno.ENOTDIR):
+                        mytxt = "%s: %s, %s, %s" % (
+                            brown("Error during workdir setup"),
+                            purple(rootdir), err,
+                            err.errno
+                        )
+                        self._entropy.output(
+                            mytxt,
+                            importance = 1,
+                            level = "error",
+                            header = darkred(" !!! ")
+                        )
+                        return 4
 
             item_dir, item_base = os.path.split(rootdir)
             item_dir = os.path.realpath(item_dir)
@@ -2942,14 +2975,14 @@ class Package:
                 oldprot_md5 = self.pkgmeta['already_protected_config_files'].get(
                     prot_old_tofile)
 
-                if oldprot_md5 and os.path.exists(pre_tofile) and \
-                    os.access(pre_tofile, os.R_OK):
+                if oldprot_md5:
 
                     try:
                         in_system_md5 = entropy.tools.md5sum(pre_tofile)
-                    except (IOError,):
-                        # which is a clearly invalid value
-                        in_system_md5 = "0000"
+                    except (OSError, IOError) as err:
+                        if err.errno != errno.ENOENT:
+                            raise
+                        in_system_md5 = "?"
 
                     if oldprot_md5 == in_system_md5:
                         # we can merge it, files, even if
@@ -3236,11 +3269,9 @@ class Package:
             protected = False # file doesn't exist
 
         # check if it's a text file
-        if protected and os.path.isfile(tofile) and os.access(tofile, os.R_OK):
+        if protected:
             protected = entropy.tools.istextfile(tofile)
             in_mask = protected
-        else:
-            protected = False # it's not a file
 
         if fromfile is not None:
             if protected and os.path.lexists(fromfile) and \
@@ -5090,13 +5121,13 @@ class Package:
 
         def _check_matching_size(download, size):
             d_path = self.__get_fetch_disk_path(download)
-            if os.access(d_path, os.R_OK) and os.path.isfile(d_path):
-                # check size first
-                with open(d_path, "rb") as f:
-                    f.seek(0, os.SEEK_END)
-                    disk_size = f.tell()
-                return size == disk_size
-            return False
+            try:
+                st = os.stat(d_path)
+                return size == st.st_size
+            except OSError as err:
+                if err.errno != errno.ENOENT:
+                    raise
+                return False
 
         matching_size = _check_matching_size(self.pkgmeta['download'],
             dbconn.retrieveSize(idpackage))
