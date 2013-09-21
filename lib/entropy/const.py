@@ -1101,6 +1101,32 @@ def const_set_chmod(myfile, chmod):
     if cur_mod != oct(chmod):
         os.chmod(myfile, chmod)
 
+def _const_file_something(path, flags):
+    """
+    Return whether file can be opened and is a regular one.
+
+    @param path: path to a file
+    @type path: string
+    @param flags: os.open() flags
+    @type flags: int
+    @return: True, if file exists and is readable
+    @rtype: bool
+    """
+    fd = None
+    try:
+        fd = os.open(path, flags)
+        mode = os.fstat(fd).st_mode
+        if stat.S_ISREG(mode):
+            # this also handles symlinks to files
+            # because we don't use O_NOFOLLOW
+            return True
+        return False
+    except (OSError, IOError):
+        return False
+    finally:
+        if fd is not None:
+            os.close(fd)
+
 def const_file_readable(path):
     """
     Return whether path points to a readable file.
@@ -1110,11 +1136,45 @@ def const_file_readable(path):
     @return: True, if file exists and is readable
     @rtype: bool
     """
+    return _const_file_something(path, os.O_RDONLY)
+
+def const_file_writable(path):
+    """
+    Return whether path points to a writable file.
+
+    @param path: path to a file
+    @type path: string
+    @return: True, if file exists and is writable
+    @rtype: bool
+    """
+    return _const_file_something(path, os.O_APPEND)
+
+def _const_dir_something(path, flags):
+    """
+    Return whether dir can be opened and is a directory.
+
+    @param path: path to a directory
+    @type path: string
+    @param flags: os.open() flags
+    @type flags: int
+    @return: True, if directory exists and can be opened with
+             the given flags
+    @rtype: bool
+    """
+    fd = None
     try:
-        with open(path, "r") as f:
+        fd = os.open(path, flags)
+        mode = os.fstat(fd).st_mode
+        if stat.S_ISDIR(mode):
+            # this also handles symlinks to files
+            # because we don't use O_NOFOLLOW
             return True
+        return False
     except (OSError, IOError):
         return False
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 def const_dir_readable(dir_path):
     """
@@ -1126,11 +1186,18 @@ def const_dir_readable(dir_path):
     @return: True, if directory exists and is readable
     @rtype: bool
     """
-    try:
-        os.listdir(dir_path)
-        return True
-    except (OSError, IOError):
-        return False
+    return _const_dir_something(dir_path, os.O_RDONLY)
+
+def const_dir_writable(dir_path):
+    """
+    Return whether path points to a writable directory.
+
+    @param path: path to a directory
+    @type path: string
+    @return: True, if directory exists and is writable
+    @rtype: bool
+    """
+    return _const_dir_something(dir_path, os.O_APPEND)
 
 def const_get_entropy_gid():
     """
