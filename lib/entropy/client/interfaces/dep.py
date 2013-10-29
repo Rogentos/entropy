@@ -10,8 +10,11 @@
 
 """
 import os
+import collections
 import copy
 import hashlib
+import multiprocessing
+import threading
 
 from entropy.const import etpConst, const_debug_write, const_isstring, \
     const_isnumber, const_convert_to_rawstring, const_convert_to_unicode, \
@@ -2956,9 +2959,6 @@ class CalculatorsMixin:
         """
         cl_settings = self._settings[self.sys_settings_client_plugin_id]
         misc_settings = cl_settings['misc']
-        remove = []
-        fine = []
-        spm_fine = []
 
         # critical updates hook, if enabled
         # this will force callers to receive only critical updates
@@ -2968,9 +2968,9 @@ class CalculatorsMixin:
             if update:
                 return {
                     'update': update,
-                    'remove': remove,
-                    'fine': fine,
-                    'spm_fine': spm_fine,
+                    'remove': [],
+                    'fine': [],
+                    'spm_fine': [],
                     'critical_found': True,
                     }
 
@@ -2991,30 +2991,43 @@ class CalculatorsMixin:
 
         # get all the installed packages
         try:
-            idpackages = self._installed_repository.listAllPackageIds(
-                order_by = 'atom')
+            package_ids = collections.deque(
+                self._installed_repository.listAllPackageIds())
         except OperationalError:
             # client db is broken!
             raise SystemDatabaseError("installed packages repository is broken")
 
-        update = []
-        maxlen = len(idpackages)
-        mytxt = _("Calculating updates")
-        last_avg = 0
-        for count, idpackage in enumerate(idpackages, 1):
+        count = 0
+        total = len(package_ids)
+        last_count = 0
+        remove = collections.deque()
+        fine = collections.deque()
+        spm_fine = collections.deque()
+        update = set()
 
-            avg = int(float(count)/maxlen*100)
-            if (avg%10 == 9 and avg != last_avg) or \
-                    (count == maxlen) or (count == 1):
-                last_avg = avg
-                if not quiet:
+        while True:
+            try:
+                package_id = package_ids.pop()
+            except IndexError:
+                break
+            count += 1
+
+            if not quiet:
+
+                avg = int(float(count) / total * 100)
+                execute = avg % 10 == 9 and last_count < count
+                if not execute:
+                    execute = (count == total) or (count == 1)
+
+                if execute:
+                    last_count = count
                     self.output(
-                        mytxt,
+                        _("Calculating updates"),
                         importance = 0,
                         level = "info",
                         back = True,
                         header = ":: ",
-                        count = (count, maxlen),
+                        count = (count, total),
                         percent = True,
                         footer = " ::"
                     )
@@ -3023,7 +3036,7 @@ class CalculatorsMixin:
                 cl_pkgkey, cl_slot, cl_version, \
                     cl_tag, cl_revision, \
                     cl_atom = self._installed_repository.getStrictData(
-                        idpackage)
+                        package_id)
             except TypeError:
                 # check against broken entries, or removed during iteration
                 continue
@@ -3034,14 +3047,17 @@ class CalculatorsMixin:
             # otherwise, do the usual duties.
             cl_pkgkey_tag = None
             if cl_tag:
-                cl_pkgkey_tag = cl_pkgkey + etpConst['entropytagprefix'] + \
-                    cl_tag
+                cl_pkgkey_tag = "%s%s%s" % (
+                    cl_pkgkey,
+                    etpConst['entropytagprefix'],
+                    cl_tag)
 
             while True:
                 try:
                     match = None
                     if cl_pkgkey_tag is not None:
-                        # search with tag first, if nothing pops up, fallback
+                        # search with tag first, if nothing
+                        # pops up, fallback
                         # to usual search?
                         match = self.atom_match(
                             cl_pkgkey_tag,
@@ -3072,27 +3088,28 @@ class CalculatorsMixin:
                     do_continue = True
                     break
                 try:
-                    m_idpackage = match[0][0]
+                    m_package_id = match[0][0]
                 except TypeError:
                     if not use_match_cache:
                         raise
                     use_match_cache = False
                     continue
                 break
+
             if do_continue:
                 continue
+
             # now compare
             # version: cl_version
             # tag: cl_tag
             # revision: cl_revision
-            if (m_idpackage != -1):
+            if (m_package_id != -1):
                 repoid = match[1]
                 version = match[0][1]
                 tag = match[0][2]
                 revision = match[0][3]
                 if empty:
-                    if (m_idpackage, repoid) not in update:
-                        update.append((m_idpackage, repoid))
+                    update.add((m_package_id, repoid))
                     continue
                 if cl_revision != revision:
                     # different revision
@@ -3100,43 +3117,39 @@ class CalculatorsMixin:
                             and ignore_spm_downgrades:
                         # no difference, we're ignoring revision 9999
                         fine.append(cl_atom)
-                        if (m_idpackage, repoid) not in update:
-                            spm_fine.append((m_idpackage, repoid))
+                        spm_fine.append((m_package_id, repoid))
                         continue
                     else:
-                        if (m_idpackage, repoid) not in update:
-                            update.append((m_idpackage, repoid))
+                        update.add((m_package_id, repoid))
                         continue
                 elif (cl_version != version):
                     # different versions
-                    if (m_idpackage, repoid) not in update:
-                        update.append((m_idpackage, repoid))
+                    update.add((m_package_id, repoid))
                     continue
                 elif (cl_tag != tag):
                     # different tags
-                    if (m_idpackage, repoid) not in update:
-                        update.append((m_idpackage, repoid))
+                    update.add((m_package_id, repoid))
                     continue
                 else:
 
                     # Note: this is a bugfix to improve branch migration
                     # and really check if pkg has been repackaged
                     # first check branch
-                    if idpackage is not None:
+                    if package_id is not None:
 
                         c_digest = self._installed_repository.retrieveDigest(
-                            idpackage)
+                            package_id)
                         # If the repo has been manually (user-side)
                         # regenerated, digest == "0". In this case
                         # skip the check.
                         if c_digest != "0":
                             c_repodb = self.open_repository(repoid)
-                            r_digest = c_repodb.retrieveDigest(m_idpackage)
+                            r_digest = c_repodb.retrieveDigest(m_package_id)
 
-                            if (r_digest != c_digest) and (r_digest is not None) \
-                                    and (c_digest is not None):
-                                if (m_idpackage, repoid) not in update:
-                                    update.append((m_idpackage, repoid))
+                            if (r_digest != c_digest) and \
+                               (r_digest is not None) \
+                               and (c_digest is not None):
+                                update.add((m_package_id, repoid))
                                 continue
 
                     # no difference
@@ -3144,10 +3157,11 @@ class CalculatorsMixin:
                     continue
 
             # don't take action if it's just masked
-            maskedresults = self.atom_match(cl_pkgkey, match_slot = cl_slot,
+            maskedresults = self.atom_match(
+                cl_pkgkey, match_slot = cl_slot,
                 mask_filter = False, match_repo = match_repos)
             if maskedresults[0] == -1:
-                remove.append(idpackage)
+                remove.append(package_id)
 
         # validate remove, do not return installed packages that are
         # still referenced by others as "removable"
@@ -3156,6 +3170,16 @@ class CalculatorsMixin:
             remove = [
                 x for x in remove if not \
                     self._installed_repository.retrieveReverseDependencies(x)]
+        else:
+            remove = list(remove)
+
+        # sort data
+        upd_sorter = lambda (x, y): self.open_repository(y).retrieveAtom(x)
+        rm_sorter = lambda x: self._installed_repository.retrieveAtom(x)
+        update = sorted(update, key = upd_sorter)
+        fine = sorted(fine)
+        spm_fine = sorted(spm_fine, key = upd_sorter)
+        remove = sorted(remove, key = rm_sorter)
 
         outcome = {
             'update': update,

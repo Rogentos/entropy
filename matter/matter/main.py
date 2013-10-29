@@ -14,6 +14,7 @@ import os
 import sys
 import errno
 import argparse
+import collections
 
 # keep these before PackageBuilder due to the os.environ stuff inside
 from matter.binpms.base import BaseBinaryPMS, BaseBinaryResourceLock
@@ -80,12 +81,15 @@ def matter_main(binary_pms, nsargs, cwd, specs):
             return _teardown(_rc)
 
     exit_st = 0
-    completed = []
-    not_found = []
-    not_installed = []
-    not_merged = []
-    uninstalled = []
+    completed = collections.deque()
+    not_found = collections.deque()
+    not_installed = collections.deque()
+    not_merged = collections.deque()
+    uninstalled = collections.deque()
     missing_use = {}
+    unstable_keywords = set()
+    pmask_changes = set()
+    license_changes = {}
     tainted_repositories = set()
     spec_count = 0
     tot_spec = len(specs)
@@ -97,6 +101,7 @@ def matter_main(binary_pms, nsargs, cwd, specs):
         spec_count += 1
         keep_going = spec["keep-going"] == "yes"
         local_completed = []
+        local_uninstalled = []
 
         tot_pkgs = len(spec["packages"])
         for pkg_count, packages in enumerate(spec["packages"], 1):
@@ -112,10 +117,27 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 builder.get_not_installed_packages())
             not_merged.extend(
                 builder.get_not_merged_packages())
-            uninstalled.extend(
-                builder.get_uninstalled_packages())
-            missing_use.update(
-                builder.get_missing_use_packages())
+            uninstalled = builder.get_uninstalled_packages()
+            uninstalled.extend(uninstalled)
+            local_uninstalled.extend(uninstalled)
+
+            # Merge at least the first layer of dicts.
+            for k, v in builder.get_missing_use_packages().items():
+                obj = missing_use.setdefault(k, {})
+                obj.update(v)
+
+            unstable_keywords.update(
+                builder.get_needed_unstable_keywords())
+            pmask_changes.update(
+                builder.get_needed_package_mask_changes())
+
+            # We need to merge the two dicts, not just update()
+            # or we can lose the full set of licenses associated
+            # to a single cpv.
+            for k, v in builder.get_needed_license_changes().items():
+                obj = license_changes.setdefault(k, set())
+                obj.update(v)
+
             preserved_libs = binary_pms.check_preserved_libraries(
                 emerge_config)
 
@@ -146,9 +168,9 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 if not keep_going:
                     break
 
-        # call post-build cleanup operations,
-        # run it unconditionally
-        PackageBuilder.post_build(spec, emerge_config)
+        # call post-build cleanup operations
+        if local_completed or local_uninstalled:
+            PackageBuilder.post_build(spec, emerge_config)
 
         completed.extend([x for x in local_completed \
             if x not in completed])
@@ -167,6 +189,8 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                 exit_st = _rc
                 if not keep_going:
                     break
+
+        PackageBuilder.clear_caches(emerge_config)
 
     if tainted_repositories and nsargs.push and nsargs.commit:
         if preserved_libs and nsargs.disable_preserved_libs:
@@ -204,6 +228,18 @@ def matter_main(binary_pms, nsargs, cwd, specs):
                     use_l.append("-" + use)
             print_generic("%s %s" % (
                     use_data["cp:slot"], " ".join(use_l)))
+        print_generic("")
+
+    if unstable_keywords:
+        print_generic("Packages not built due to missing unstable keywords:")
+        for atom in sorted(unstable_keywords):
+            print_generic("%s" % (atom,))
+        print_generic("")
+
+    if pmask_changes:
+        print_generic("Packages not built due to needed package.mask changes:")
+        for atom in sorted(pmask_changes):
+            print_generic("%s" % (atom,))
         print_generic("")
 
     print_generic("Preserved libs: %s" % (

@@ -10,6 +10,9 @@
 
 """
 import copy
+import errno
+import fcntl
+import gc
 import os
 import shlex
 import shutil
@@ -82,7 +85,11 @@ class PackageBuilder(object):
         self._not_found_packages = []
         self._not_installed_packages = []
         self._not_merged_packages = []
+
         self._missing_use_packages = {}
+        self._needed_unstable_keywords = set()
+        self._needed_package_mask_changes = set()
+        self._needed_license_changes = {}
 
     @classmethod
     def _build_standard_environment(cls, repository=None):
@@ -167,6 +174,28 @@ class PackageBuilder(object):
         USE flags.
         """
         return self._missing_use_packages
+
+    def get_needed_unstable_keywords(self):
+        """
+        Return the list of packages that haven't been merged due to the need
+        of unstable keywords. For instance, if a needed package is unstable
+        keyword masked in package.keywords, it will end up in this list.
+        """
+        return self._needed_unstable_keywords
+
+    def get_needed_package_mask_changes(self):
+        """
+        Return the list of packages that haven't been merged due to the need
+        of package.mask changes.
+        """
+        return self._needed_package_mask_changes
+
+    def get_needed_license_changes(self):
+        """
+        Return the list of packages that haven't been merged due to the need
+        of package.license changes.
+        """
+        return self._needed_license_changes
 
     def run(self):
         """
@@ -257,82 +286,114 @@ class PackageBuilder(object):
         allow_rebuild = self._params["rebuild"] == "yes"
         allow_not_installed = self._params["not-installed"] == "yes"
         allow_downgrade = self._params["downgrade"] == "yes"
+        accepted = []
 
-        try:
-            best_visible = portdb.xmatch("bestmatch-visible", package)
-        except portage.exception.InvalidAtom:
-            print_error("cannot match: %s, invalid atom" % (package,))
-            best_visible = None
-
-        if not best_visible:
-            # package not found, return error
-            print_error("cannot match: %s, ignoring this one" % (package,))
-            self._not_found_packages.append(package)
-            return None
-
-        print_info("matched: %s for %s" % (best_visible, package,))
         # now determine what's the installed version.
-        best_installed = portage.best(vardb.match(package))
+        best_installed = portage.best(vardb.match(package, use_cache=0))
         if (not best_installed) and (not allow_not_installed):
             # package not installed
             print_error("package not installed: %s, ignoring this one" % (
-                package,))
+                    package,))
             self._not_installed_packages.append(package)
-            return None
+            return accepted
 
         if (not best_installed) and allow_not_installed:
             print_warning(
-                "package not installed: "
-                "%s, but 'not-installed: yes' provided" % (package,))
+                "%s not installed, but 'not-installed: yes' provided" % (
+                    package,))
 
-        build_only = self._params["build-only"] == "yes"
-        cmp_res = -1
-        if best_installed:
-            print_info("found installed: %s for %s" % (
-                    best_installed, package,))
-            # now compare
-            # -1 if best_installed is older than best_visible
-            # 1 if best_installed is newer than best_visible
-            # 0 if they are equal
-            cmp_res = portage.versions.pkgcmp(
-                portage.versions.pkgsplit(best_installed),
-                portage.versions.pkgsplit(best_visible))
-        elif (not best_installed) and build_only:
-            # package is not installed, and build-only
-            # is provided. We assume that the package
-            # is being built and added to repositories directly.
-            # This means that we need to query binpms to know
-            # about the current version.
-            print_info("package is not installed, and 'build-only: yes'. "
-                       "Asking the binpms about the package state.")
-            best_available = self._binpms.best_available(package)
-            print_info("found available: %s for %s" % (
-                    best_available, package))
-            if best_available:
+        best_visibles = []
+        try:
+            best_visibles += portdb.xmatch("match-visible", package)
+        except portage.exception.InvalidAtom:
+            print_error("cannot match: %s, invalid atom" % (package,))
+
+        # map all the cpvs to their slots
+        cpv_slot_map = {}
+        for pkg in best_visibles:
+            obj = cpv_slot_map.setdefault(pkg.slot, [])
+            obj.append(pkg)
+
+        # then pick the best for each slot
+        del best_visibles[:]
+        for slot, pkgs in cpv_slot_map.items():
+            pkg = portage.best(pkgs)
+            best_visibles.append(pkg)
+        best_visibles.sort()  # deterministic is better
+
+        if not best_visibles:
+            # package not found, return error
+            print_error("cannot match: %s, ignoring this one" % (package,))
+            self._not_found_packages.append(package)
+            return accepted
+
+        print_info("matched: %s for %s" % (", ".join(best_visibles), package,))
+
+        for best_visible in best_visibles:
+
+            cp = best_visible.cp
+            slot = best_visible.slot
+            cp_slot = "%s:%s" % (cp, slot)
+
+            # determine what's the installed version.
+            # we know that among all the best_visibles, there is one that
+            # is installed. The question is whether we got it now.
+            best_installed = portage.best(vardb.match(cp_slot, use_cache=0))
+            if (not best_installed) and (not allow_not_installed):
+                # package not installed
+                print_warning("%s not installed, skipping" % (cp_slot,))
+                continue
+
+            build_only = self._params["build-only"] == "yes"
+            cmp_res = -1
+            if best_installed:
+                print_info("found installed: %s for %s" % (
+                        best_installed, package,))
+                # now compare
+                # -1 if best_installed is older than best_visible
+                # 1 if best_installed is newer than best_visible
+                # 0 if they are equal
                 cmp_res = portage.versions.pkgcmp(
-                    portage.versions.pkgsplit(best_available),
+                    portage.versions.pkgsplit(best_installed),
                     portage.versions.pkgsplit(best_visible))
+            elif (not best_installed) and build_only:
+                # package is not installed, and build-only
+                # is provided. We assume that the package
+                # is being built and added to repositories directly.
+                # This means that we need to query binpms to know
+                # about the current version.
+                print_info("package is not installed, and 'build-only: yes'. "
+                           "Asking the binpms about the package state.")
+                best_available = self._binpms.best_available(cp_slot)
+                print_info("found available: %s for %s" % (
+                        best_available, cp_slot))
+                if best_available:
+                    cmp_res = portage.versions.pkgcmp(
+                        portage.versions.pkgsplit(best_available),
+                        portage.versions.pkgsplit(best_visible))
 
-        is_rebuild = cmp_res == 0
+            is_rebuild = cmp_res == 0
 
-        if (cmp_res == 1) and (not allow_downgrade):
-            # downgrade in action and downgrade not allowed, aborting!
-            print_warning(
-                "package: %s, would be downgraded, %s to %s, ignoring" % (
-                    package, best_installed, best_visible,))
-            return None
+            if (cmp_res == 1) and (not allow_downgrade):
+                # downgrade in action and downgrade not allowed, aborting!
+                print_warning(
+                    "%s would be downgraded, %s to %s, ignoring" % (
+                        cp_slot, best_installed, best_visible,))
+                continue
 
-        if is_rebuild and (not allow_rebuild):
-            # rebuild in action and rebuild not allowed, aborting!
-            print_warning(
-                "package: %s, would be rebuilt to %s, ignoring" % (
-                    package, best_visible,))
-            return None
+            if is_rebuild and (not allow_rebuild):
+                # rebuild in action and rebuild not allowed, aborting!
+                print_warning(
+                    "%s would be rebuilt to %s, ignoring" % (
+                        cp_slot, best_visible,))
+                continue
 
-        # at this point we can go ahead accepting package in queue
-        print_info("package: %s [%s], accepted in queue" % (
-                best_visible, package,))
-        return best_visible
+            # at this point we can go ahead accepting package in queue
+            print_info("package: %s [%s], accepted in queue" % (
+                    best_visible, cp_slot,))
+            accepted.append(best_visible)
+
+        return accepted
 
     def _post_graph_filters(self, graph, vardb, portdb):
         """
@@ -409,7 +470,8 @@ class PackageBuilder(object):
             for pkg in real_queue:
                 # frozenset
                 enabled_flags = pkg.use.enabled
-                inst_atom = portage.best(vardb.match(pkg.slot_atom))
+                inst_atom = portage.best(
+                    vardb.match(pkg.slot_atom, use_cache=0))
                 if not inst_atom:
                     # new package, ignore check
                     continue
@@ -442,7 +504,8 @@ class PackageBuilder(object):
         if not allow_downgrade:
             allow_downgrade_give_ups = []
             for pkg in real_queue:
-                inst_atom = portage.best(vardb.match(pkg.slot_atom))
+                inst_atom = portage.best(
+                    vardb.match(pkg.slot_atom, use_cache=0))
                 cmp_res = -1
                 if inst_atom:
                     # -1 if inst_atom is older than pkg.cpv
@@ -466,7 +529,8 @@ class PackageBuilder(object):
         changing_repo_pkgs = []
         for pkg in real_queue:
             wanted_repo = pkg.repo
-            inst_atom = portage.best(vardb.match(pkg.slot_atom))
+            inst_atom = portage.best(
+                vardb.match(pkg.slot_atom, use_cache=0))
             current_repo = vardb.aux_get(inst_atom, ["repository"])[0]
             if current_repo:
                 if current_repo != wanted_repo:
@@ -650,9 +714,9 @@ class PackageBuilder(object):
                 expanded_pkgs.append(package)
 
             for exp_pkg in expanded_pkgs:
-                best_visible = self._pre_graph_filters(
+                accepted = self._pre_graph_filters(
                     exp_pkg, portdb, vardb)
-                if best_visible is not None:
+                for best_visible in accepted:
                     packages.append((exp_pkg, best_visible))
 
         if not packages:
@@ -698,12 +762,7 @@ class PackageBuilder(object):
 
             # try to collect some info about the failure
             bt_config = (graph.get_backtrack_infos() or {}).get("config", {})
-            supported_info = ["needed_use_config_changes"]
             for k, v in bt_config.items():
-                if k not in supported_info:
-                    print_warning("unsupported backtrack info: %s -> %s" % (
-                            k, v,))
-                    continue
                 if k == "needed_use_config_changes":
                     for tup in v:
                         try:
@@ -713,10 +772,26 @@ class PackageBuilder(object):
                                 "unsupported needed_use_config_changes: %s" % (
                                     tup,))
                             continue
-                        obj = self._missing_use_packages.setdefault(pkg.cpv, {})
-                        obj["cp:slot"] = pkg.slot_atom
+                        obj = self._missing_use_packages.setdefault(
+                            "%s" % (pkg.cpv,), {})
+                        obj["cp:slot"] = "%s" % (pkg.slot_atom,)
                         changes = obj.setdefault("changes", {})
                         changes.update(copy.deepcopy(new_changes))
+                elif k == "needed_unstable_keywords":
+                    for pkg in v:
+                        self._needed_unstable_keywords.add("%s" % (pkg.cpv,))
+                elif k == "needed_p_mask_changes":
+                    for pkg in v:
+                        self._needed_package_mask_changes.add(
+                            "%s" % (pkg.cpv,))
+                elif k == "needed_license_changes":
+                    for pkg, lics in v:
+                        obj = self._needed_license_changes.setdefault(
+                            "%s" % (pkg.cpv,), set())
+                        obj.update(lics)
+                else:
+                    print_warning("unsupported backtrack info: %s -> %s" % (
+                            k, v,))
 
             return 0
         print_info("dependency graph generated successfully")
@@ -747,7 +822,7 @@ class PackageBuilder(object):
             myopts, spinner, favorites=favorites,
             graph_config=graph.schedulerGraph())
         del graph
-        clear_caches(emerge_trees)
+        self.clear_caches(self._emerge_config)
         retval = mergetask.merge()
 
         not_merged = []
@@ -756,6 +831,7 @@ class PackageBuilder(object):
         if retval != 0:
             merge_list = mtimedb.get("resume", {}).get("mergelist")
             for _merge_type, _merge_root, merge_atom, _merge_act in merge_list:
+                merge_atom = "%s" % (merge_atom,)
                 if failed_package is None:
                     # we consider the first encountered package the one
                     # that failed. It makes sense since packages are built
@@ -775,11 +851,11 @@ class PackageBuilder(object):
                 if pkg.operation == "merge":
                     # add to build queue
                     print_info("package: %s, successfully built" % (cpv,))
-                    self._built_packages.append(cpv)
+                    self._built_packages.append("%s" % (cpv,))
                 else:
                     # add to uninstall queue
                     print_info("package: %s, successfully uninstalled" % (cpv,))
-                    self._uninstalled_packages.append(cpv)
+                    self._uninstalled_packages.append("%s" % (cpv,))
 
         post_emerge(myaction, myopts, myfiles, settings["ROOT"],
             emerge_trees, mtimedb, retval)
@@ -820,29 +896,73 @@ class PackageBuilder(object):
         return retval
 
     @classmethod
+    def clear_caches(cls, emerge_config):
+        """
+        Clear Portage and Binary PMS caches.
+        """
+        emerge_settings, emerge_trees, _mtimedb = emerge_config
+        clear_caches(emerge_trees)
+        # clearing vartree.dbapi.cpcache doesn't seem to make a big diff
+        root_tree = emerge_trees[emerge_settings["ROOT"]]
+        vdb = root_tree["vartree"].dbapi
+        for method_name in ("_clear_cache",):
+            method = getattr(vdb, method_name, None)
+            if method is not None:
+                method()
+            else:
+                print_error(
+                    "vartree does not have a %s method anymore" % (
+                        method_name,))
+
+        root_tree["porttree"].dbapi.close_caches()
+        root_tree["porttree"].dbapi = portage.dbapi.porttree.portdbapi(
+            root_tree["porttree"].settings)
+
+        for x in range(10):
+            count = gc.collect()
+            if not count:
+                break
+
+    @classmethod
     def post_build(cls, spec, emerge_config):
         """
         Execute Portage post-build tasks.
         """
+        print_info("executing post-build operations, please wait...")
+
         emerge_settings, emerge_trees, mtimedb = emerge_config
         if "yes" == emerge_settings.get("AUTOCLEAN"):
-            print_info("executing post-build operations, please wait...")
             build_args = list(cls._setup_build_args(spec))
             _action, opts, _files = parse_opts(build_args)
             unmerge(emerge_trees[emerge_settings["ROOT"]]["root_config"],
-                opts, "clean", [], mtimedb["ldpath"], autoclean=1)
+                    opts, "clean", [], mtimedb["ldpath"], autoclean=1)
 
     @classmethod
     def sync(cls):
         """
         Execute Portage and Overlays sync
         """
-        sync_cmd = cls.PORTAGE_SYNC_CMD
-        std_env = cls._build_standard_environment()
-        exit_st = subprocess.call(sync_cmd, env = std_env)
-        if exit_st != 0:
-            return exit_st
+        portdir = os.getenv("PORTDIR", "/usr/portage")
+        portdir_lock_file = os.path.join(portdir, ".matter_sync.lock")
 
-        # overlays update
-        overlay_cmd = cls.OVERLAYS_SYNC_CMD
-        return subprocess.call(overlay_cmd, env = std_env)
+        print_info("synchronizing the repositories...")
+        print_info("About to acquire %s..." % (portdir_lock_file,))
+        with open(portdir_lock_file, "a+") as lock_f:
+            while True:
+                try:
+                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+                    break
+                except IOError as err:
+                    if err.errno == errno.EINTR:
+                        continue
+                    raise
+
+            sync_cmd = cls.PORTAGE_SYNC_CMD
+            std_env = cls._build_standard_environment()
+            exit_st = subprocess.call(sync_cmd, env = std_env)
+            if exit_st != 0:
+                return exit_st
+
+            # overlays update
+            overlay_cmd = cls.OVERLAYS_SYNC_CMD
+            return subprocess.call(overlay_cmd, env = std_env)
