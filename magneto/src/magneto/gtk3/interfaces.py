@@ -131,24 +131,31 @@ class Magneto(MagnetoCore):
     def applet_doubleclick(self, widget):
         super(Magneto, self).applet_doubleclick()
 
-    def show_alert(self, title, text, urgency = None, force = False):
+    def show_alert(self, title, text, urgency = None, force = False,
+                   buttons = None):
 
         def do_show():
             if ((title, text) == self.last_alert) and not force:
                 return False
             Notify.init(_("System Updates"))
             n = Notify.Notification.new(
-                title, text, "dialog-information")
+                title, text, self._status_icon.get_icon_name())
+
+            # Keep a reference or the callback of the actions added
+            # below will never work.
+            # See: https://bugzilla.redhat.com/show_bug.cgi?id=241531
+            self.__last_notification = n
+
             if urgency == 'critical':
                 n.set_urgency(Notify.Urgency.CRITICAL)
             elif urgency == 'low':
                 n.set_urgency(Notify.Urgency.LOW)
             self.last_alert = (title, text)
-            try:
-                # this has been dropped from libnotify 0.7
-                n.attach_to_status_icon(self._status_icon)
-            except AttributeError:
-                pass
+
+            if buttons:
+                for action_id, button_name, button_callback in buttons:
+                    n.add_action(action_id, button_name, button_callback, None)
+
             n.show()
             return False
 

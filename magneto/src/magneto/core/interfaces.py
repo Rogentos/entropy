@@ -67,7 +67,8 @@ class MagnetoCoreUI(object):
         """
         raise NotImplementedError()
 
-    def show_alert(self, title, text, urgency = None, force = False):
+    def show_alert(self, title, text, urgency = None, force = False,
+                   buttons = None):
         """
         This method is used for calling the popup notification widget.
 
@@ -79,6 +80,9 @@ class MagnetoCoreUI(object):
         @type urgency: string
         @param force: force user notification
         @type force: bool
+        @param buttons: list of tuples ("action id", "button name", callback)
+            that shall be rendered.
+        @type buttons: list or None
         """
         raise NotImplementedError()
 
@@ -123,6 +127,7 @@ class MagnetoCore(MagnetoCoreUI):
     """
 
     _UPDATES_AVAILABLE_SIGNAL = "updates_available"
+    _SYSTEM_RESTART_SIGNAL = "system_restart_needed"
     _ACTIVITY_STARTED_SIGNAL = "activity_started"
     _REPOSITORIES_UPDATED_SIGNAL = "repositories_updated"
     _SHUTDOWN_SIGNAL = "shutdown"
@@ -234,6 +239,11 @@ class MagnetoCore(MagnetoCoreUI):
                     dbus_interface=self.DBUS_INTERFACE)
 
                 self.__entropy_bus.connect_to_signal(
+                    self._SYSTEM_RESTART_SIGNAL,
+                    self._system_restart_signal,
+                    dbus_interface=self.DBUS_INTERFACE)
+
+                self.__entropy_bus.connect_to_signal(
                     self._REPOSITORIES_UPDATED_SIGNAL,
                     self._repositories_updated_signal,
                     dbus_interface=self.DBUS_INTERFACE)
@@ -313,9 +323,17 @@ class MagnetoCore(MagnetoCoreUI):
         return dbus_string.decode(etpConst['conf_encoding'])
 
     def _updates_available_signal(self, update, update_atoms,
-                                  remove, remove_atoms):
+                                  remove, remove_atoms,
+                                  one_click_update=False):
         updates = [self._dbus_to_unicode(x) for x in update_atoms]
-        self.new_updates_signal(updates)
+        self.new_updates_signal(updates, one_click_update=one_click_update)
+
+    def _system_restart_signal(self):
+        self.show_alert(
+            _("System restart needed"),
+            _("This system should be restarted at your earliest convenience"),
+            force = True,
+            )
 
     def show_service_not_available(self):
         # inform user about missing Entropy service
@@ -329,13 +347,16 @@ class MagnetoCore(MagnetoCoreUI):
             urgency = "critical"
         )
 
-    def new_updates_signal(self, update_atoms):
+    def new_updates_signal(self, update_atoms, one_click_update=False):
         if not config.settings['APPLET_ENABLED']:
             return
 
         del self.package_updates[:]
         self.package_updates.extend(update_atoms)
         upd_len = len(update_atoms)
+
+        def upgrade_cb(*args):
+            self.launch_package_manager(other_args=["--upgrade"])
 
         if upd_len:
             self.update_tooltip(ngettext("There is %s update available",
@@ -349,7 +370,8 @@ class MagnetoCore(MagnetoCoreUI):
                     "There are <b>%s</b> updates available",
                     upd_len) % (upd_len,),
                 urgency = "critical",
-                force = self.manual_check_triggered
+                force = self.manual_check_triggered,
+                buttons = [("upgrade", _("Upgrade now"), upgrade_cb,)]
             )
         else:
             # all fine, no updates
@@ -453,8 +475,11 @@ class MagnetoCore(MagnetoCoreUI):
         task.daemon = True
         task.start()
 
-    def launch_package_manager(self, *data):
-        task = ParallelTask(subprocess.call, ["/usr/bin/rigo"])
+    def launch_package_manager(self, *data, **kwargs):
+        args = ["/usr/bin/rigo"]
+        if kwargs.get("other_args"):
+            args += kwargs["other_args"]
+        task = ParallelTask(subprocess.call, args)
         task.daemon = True
         task.start()
 

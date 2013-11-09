@@ -22,6 +22,7 @@ import hashlib
 import socket
 import pty
 import subprocess
+import threading
 
 from entropy.const import const_is_python3, const_file_readable
 
@@ -256,26 +257,29 @@ class UrlFetcher(TextInterface):
         else:
             dead = False
             return_code = 1
-            std_r = os.fdopen(fd, "r")
-            while not dead:
+            srd_r = None
+            try:
+                std_r = os.fdopen(fd, "r")
+                while not dead:
 
-                try:
-                    dead, return_code = os.waitpid(pid, os.WNOHANG)
-                except OSError as e:
-                    if e.errno != errno.ECHILD:
-                        raise
-                    dead = True
+                    try:
+                        dead, return_code = os.waitpid(pid, os.WNOHANG)
+                    except OSError as e:
+                        if e.errno != errno.ECHILD:
+                            raise
+                        dead = True
 
-                # wait a bit
-                time.sleep(0.2)
-                _line_reader(std_r)
+                    # wait a bit
+                    time.sleep(0.2)
+                    _line_reader(std_r)
 
-                if self.__abort_check_func != None:
-                    self.__abort_check_func()
-                if self.__thread_stop_func != None:
-                    self.__thread_stop_func()
-
-            std_r.close()
+                    if self.__abort_check_func != None:
+                        self.__abort_check_func()
+                    if self.__thread_stop_func != None:
+                        self.__thread_stop_func()
+            finally:
+                if std_err is not None:
+                    std_r.close()
             return return_code
 
     @staticmethod
@@ -457,7 +461,7 @@ class UrlFetcher(TextInterface):
             if len(data) == 5:
                 try:
                     # perms, size, date, time, file name
-                    self.__remotesize = float(data[1])/1024
+                    self.__remotesize = float(data[1])/1000
                 except ValueError:
                     pass
 
@@ -664,7 +668,7 @@ class UrlFetcher(TextInterface):
             return self.__status
 
         if self.__remotesize > 0:
-            self.__remotesize = float(int(self.__remotesize))/1024
+            self.__remotesize = float(int(self.__remotesize))/1000
         else:
             # this means we were not able to get Content-Length
             self.__remotesize = 0
@@ -718,7 +722,7 @@ class UrlFetcher(TextInterface):
                 self.update()
                 self.__oldaverage = self.__average
             if self.__speedlimit:
-                while self.__datatransfer > self.__speedlimit*1024:
+                while self.__datatransfer > self.__speedlimit*1000:
                     time.sleep(0.1)
                     self._update_speed()
                     if self.__show_speed:
@@ -735,7 +739,7 @@ class UrlFetcher(TextInterface):
         self.__md5_checksum.update(mybuffer)
         # update progress info
         self.__downloadedsize = self.__localfile.tell()
-        kbytecount = float(self.__downloadedsize)/1024
+        kbytecount = float(self.__downloadedsize)/1000
         # avoid race condition with test and eval not being atomic
         # this will always work
         try:
@@ -793,7 +797,7 @@ class UrlFetcher(TextInterface):
         if self.__datatransfer < 0:
             self.__datatransfer = 0.0
 
-        rounded_remote = int(round(self.__remotesize*1024, 0))
+        rounded_remote = int(round(self.__remotesize * 1000, 0))
         rounded_downloaded = int(round(self.__downloadedsize, 0))
         x_delta = rounded_remote - rounded_downloaded
         if self.__datatransfer > 0:
@@ -878,7 +882,7 @@ class UrlFetcher(TextInterface):
         sec_txt = _("sec") # as in XX kb/sec
 
         current_txt = darkred("    %s: " % (mytxt,)) + \
-            darkgreen(str(round(float(self.__downloadedsize)/1024, 1))) + "/" \
+            darkgreen(str(round(float(self.__downloadedsize)/1000, 1))) + "/" \
             + red(str(round(self.__remotesize, 1))) + " kB"
         # create progress bar
         barsize = 10
@@ -951,8 +955,10 @@ class MultipleUrlFetcher(TextInterface):
             the value is read from Entropy configuration files.
         @type timeout: int
         """
+        self._progress_data = {}
+        self._url_path_list = url_path_list
+
         self.__system_settings = SystemSettings()
-        self.__url_path_list = url_path_list
         self.__resume = resume
         self.__checksum = checksum
         self.__show_speed = show_speed
@@ -964,7 +970,7 @@ class MultipleUrlFetcher(TextInterface):
         self.__data_transfer = 0
         self.__average = 0
         self.__old_average = 0
-        self.__time_remaining_sec = 0
+        self.__time_remaining_secs = 0
 
         self.__url_fetcher = url_fetcher_class
         if self.__url_fetcher == None:
@@ -976,7 +982,8 @@ class MultipleUrlFetcher(TextInterface):
             raise InterruptError("interrupted")
 
     def _init_vars(self):
-        self.__progress_data = {}
+        self._progress_data.clear()
+        self._progress_data_lock = threading.Lock()
         self.__thread_pool = {}
         self.__download_statuses = {}
         self.__show_progress = False
@@ -985,7 +992,7 @@ class MultipleUrlFetcher(TextInterface):
         self.__data_transfer = 0
         self.__average = 0
         self.__old_average = 0
-        self.__time_remaining_sec = 0
+        self.__time_remaining_secs = 0
         self.__progress_update_t = time.time()
         self.__startup_time = time.time()
 
@@ -1021,8 +1028,8 @@ class MultipleUrlFetcher(TextInterface):
         th_id = 0
         speed_limit = 0
         dsl = self.__system_settings['repositories']['transfer_limit']
-        if isinstance(dsl, int) and self.__url_path_list:
-            speed_limit = dsl/len(self.__url_path_list)
+        if isinstance(dsl, int) and self._url_path_list:
+            speed_limit = dsl/len(self._url_path_list)
 
         class MyFetcher(self.__url_fetcher):
 
@@ -1040,7 +1047,7 @@ class MultipleUrlFetcher(TextInterface):
                 return self.__multiple_fetcher.handle_statistics(*args,
                     **kwargs)
 
-        for url, path_to_save in self.__url_path_list:
+        for url, path_to_save in self._url_path_list:
             th_id += 1
             downloader = MyFetcher(self.__url_fetcher, self, url, path_to_save,
                 checksum = self.__checksum, show_speed = self.__show_speed,
@@ -1084,7 +1091,7 @@ class MultipleUrlFetcher(TextInterface):
             self.__stop_threads = True
             raise
 
-        if len(self.__url_path_list) != len(self.__download_statuses):
+        if len(self._url_path_list) != len(self.__download_statuses):
             # there has been an error (exception)
             # complete download_statuses with error info
             for th_id, th in self.__thread_pool.items():
@@ -1119,11 +1126,11 @@ class MultipleUrlFetcher(TextInterface):
         @return: remaining download seconds
         @rtype: int
         """
-        return self.__time_remaining_sec
+        return self.__time_remaining_secs
 
     def __show_download_files_info(self):
         count = 0
-        pl = self.__url_path_list[:]
+        pl = self._url_path_list[:]
         TextInterface.output(self,
             "%s: %s %s" % (
                 darkblue(_("Aggregated download")),
@@ -1191,50 +1198,70 @@ class MultipleUrlFetcher(TextInterface):
             'time_remaining': time_remaining,
             'time_remaining_secs': time_remaining_secs,
         }
-        self.__progress_data[th_id] = data
+        with self._progress_data_lock:
+            self._progress_data[th_id] = data
 
-    def _push_progress_to_output(self, force = False):
-
+    def _compute_progress_stats(self):
+        """
+        Compute the progress statistics by reading individual ones.
+        """
         downloaded_size = 0
         total_size = 0
         time_remaining = 0
-        update_step = 0
-        pd = self.__progress_data.copy()
-        pdlen = len(pd)
 
-        # calculation
-        for th_id in sorted(pd):
-            data = pd.get(th_id)
-            downloaded_size += data.get('downloaded_size', 0)
-            total_size += data.get('total_size', 0)
-            # data_transfer from Python threading bullshit is not reliable
-            # with multiple threads and causes inaccurate informations to be
-            # printed
-            # data_transfer += data.get('data_transfer', 0)
-            tr = data.get('time_remaining_secs', 0)
-            if tr > 0:
-                time_remaining += tr
-            update_step += data.get('update_step', 0)
+        with self._progress_data_lock:
+            all_started = len(self._progress_data) == len(self._url_path_list)
+            for th_id, data in self._progress_data.items():
+                downloaded_size += data.get('downloaded_size', 0)
+                total_size += data.get('total_size', 0)
+                # data_transfer from Python threading bullshit is not reliable
+                # with multiple threads and causes inaccurate informations to be
+                # printed
+                # data_transfer += data.get('data_transfer', 0)
+                tr = data.get('time_remaining_secs', 0)
+                if tr > 0:
+                    time_remaining += tr
 
         elapsed_t = time.time() - self.__startup_time
         if elapsed_t < 0.1:
             elapsed_t = 0.1
-        data_transfer = downloaded_size / elapsed_t
-        self.__data_transfer = data_transfer
+        data_transfer = int(downloaded_size / elapsed_t)
 
-        average = 100
+        average = 0
         # total_size is in kbytes
         # downloaded_size is in bytes
-        if total_size > 0:
-            average = int(float(downloaded_size/1024)/total_size * 100)
+        if total_size > 0 and all_started:
+            average = int(float(downloaded_size / 1000) / total_size * 100)
 
-        self.__average = average
-        if pdlen > 0:
-            update_step = update_step/pdlen
+        if all_started:
+            time_remaining_str = convert_seconds_to_fancy_output(time_remaining)
         else:
-            update_step = 0
-        time_remaining = convert_seconds_to_fancy_output(time_remaining)
-        self.__time_remaining_sec = time_remaining
+            time_remaining_str = _("Infinity")
+
+        return {
+            "downloaded_size": downloaded_size,
+            "total_size": total_size,
+            "time_remaining": time_remaining,
+            "time_remaining_str": time_remaining_str,
+            "all_started": all_started,
+            "data_transfer": data_transfer,
+            "average": average,
+            }
+
+    def _push_progress_to_output(self, force = False):
+
+        stats = self._compute_progress_stats()
+        downloaded_size = stats["downloaded_size"]
+        total_size = stats["total_size"]
+        time_remaining = stats["time_remaining"]
+        all_started = stats["all_started"]
+        data_transfer = stats["data_transfer"]
+        average = stats["average"]
+        time_remaining_str = stats["time_remaining_str"]
+
+        self.__data_transfer = data_transfer
+        self.__average = average
+        self.__time_remaining_secs = time_remaining
 
         update_time_delta = 0.5
         cur_t = time.time()
@@ -1246,7 +1273,7 @@ class MultipleUrlFetcher(TextInterface):
 
             eta_txt = _("ETA")
             sec_txt = _("sec") # as in XX kb/sec
-            down_size_txt = str(round(float(downloaded_size)/1024, 1))
+            down_size_txt = str(round(float(downloaded_size) / 1000, 1))
             total_size_txt = str(round(total_size, 1))
             current_txt = darkgreen(down_size_txt) + "/" + red(total_size_txt)
             current_txt += " kB"
@@ -1266,7 +1293,8 @@ class MultipleUrlFetcher(TextInterface):
                 diffbarsize -= 1
             if self.__show_speed:
                 bartext += "] => %s" % (bytes_into_human(data_transfer),)
-                bartext += "/%s : %s: %s" % (sec_txt, eta_txt, time_remaining,)
+                bartext += "/%s : %s: %s" % (
+                    sec_txt, eta_txt, time_remaining_str,)
             else:
                 bartext += "]"
             myavg = str(average)

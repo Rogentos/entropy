@@ -64,7 +64,7 @@ from entropy.const import etpConst, const_convert_to_rawstring, \
     const_mkstemp
 from entropy.exceptions import DependenciesNotFound, \
     DependenciesCollision, DependenciesNotRemovable, SystemDatabaseError, \
-    EntropyPackageException
+    EntropyPackageException, InterruptError
 from entropy.i18n import _
 from entropy.misc import LogFile, ParallelTask, TimeScheduled, \
     ReadersWritersSemaphore
@@ -75,6 +75,8 @@ from entropy.client.interfaces.package import Package
 from entropy.client.interfaces.repository import Repository
 from entropy.services.client import WebService
 from entropy.core.settings.base import SystemSettings
+
+import kswitch
 
 import entropy.tools
 import entropy.dep
@@ -199,15 +201,16 @@ Client.__singleton_class__ = Entropy
 
 class DaemonUrlFetcher(UrlFetcher):
 
-    daemon_last_avg = 100
-    __average = 0
-    __downloadedsize = 0
-    __remotesize = 0
-    __datatransfer = 0
-    __time_remaining = ""
-    __last_t = None
-
     _DAEMON = None
+
+    def __init__(self, *args, **kwargs):
+        UrlFetcher.__init__(self, *args, **kwargs)
+        self.__average = 0
+        self.__downloadedsize = 0
+        self.__remotesize = 0
+        self.__datatransfer = 0
+        self.__time_remaining = ""
+        self.__last_t = None
 
     @staticmethod
     def set_daemon(daemon):
@@ -246,15 +249,12 @@ class DaemonUrlFetcher(UrlFetcher):
 
 class DaemonMultipleUrlFetcher(MultipleUrlFetcher):
 
-    daemon_last_avg = 100
-    __average = 0
-    __downloadedsize = 0
-    __remotesize = 0
-    __datatransfer = 0
-    __time_remaining = ""
-    __last_t = None
-
     _DAEMON = None
+
+    def __init__(self, *args, **kwargs):
+        MultipleUrlFetcher.__init__(self, *args, **kwargs)
+        self.__last_t = None
+        self.__last_t_mutex = Lock()
 
     @staticmethod
     def set_daemon(daemon):
@@ -263,22 +263,12 @@ class DaemonMultipleUrlFetcher(MultipleUrlFetcher):
         """
         DaemonMultipleUrlFetcher._DAEMON = daemon
 
-    def handle_statistics(self, th_id, downloaded_size, total_size,
-            average, old_average, update_step, show_speed, data_transfer,
-            time_remaining, time_remaining_secs):
-        self.__average = average
-        self.__downloadedsize = downloaded_size
-        self.__remotesize = total_size
-        self.__datatransfer = data_transfer
-        self.__time_remaining = time_remaining
-
     def update(self):
         if self._DAEMON is None:
             return
 
         # avoid flooding clients
-        average = self.__average
-        if average > 0.2 and average < 99.8:
+        with self.__last_t_mutex:
             last_t = self.__last_t
             cur_t = time.time()
             if last_t is not None:
@@ -286,11 +276,14 @@ class DaemonMultipleUrlFetcher(MultipleUrlFetcher):
                     return # dont flood
             self.__last_t = cur_t
 
-        GLib.idle_add(
-            self._DAEMON.transfer_output,
-            self.__average, self.__downloadedsize,
-            int(self.__remotesize), int(self.__datatransfer),
-            self.__time_remaining)
+        stats = self._compute_progress_stats()
+
+        if stats["all_started"]:
+            GLib.idle_add(
+                self._DAEMON.transfer_output,
+                stats["average"], stats["downloaded_size"],
+                stats["total_size"], stats["data_transfer"],
+                stats["time_remaining_str"])
 
 
 class FakeOutFile(object):
@@ -473,7 +466,7 @@ class RigoDaemonService(dbus.service.Object):
         Gio.FileMonitorEvent.ATTRIBUTE_CHANGED,
         Gio.FileMonitorEvent.CHANGED)
 
-    API_VERSION = 7
+    API_VERSION = 8
 
     """
     RigoDaemon is the dbus service Object in charge of executing
@@ -1196,9 +1189,68 @@ class RigoDaemonService(dbus.service.Object):
             if atom is not None:
                 remove_atoms.append(atom)
 
+        one_click_updatable = self._one_click_updatable_unlocked(
+            update, remove)
+
         GLib.idle_add(self.updates_available,
                       update, update_atoms,
-                      remove, remove_atoms)
+                      remove, remove_atoms,
+                      one_click_updatable)
+
+    def _one_click_updatable_unlocked(self, update, remove):
+        """
+        Determine whether it's possible to safely execute a
+        One Click Update of the system. This method will use
+        some euristics (maybe not in the currently implemented
+        version however) to determine if it's safe to do so.
+        """
+        enabled = self._one_click_updatable_kernel(update, remove)
+        if not enabled:
+            return False
+
+        return True
+
+    def _one_click_updatable_kernel(self, update, remove):
+        """
+        Determine whether One Click Update can be run basing
+        on the current running kernel state and its availability
+        inside repositories.
+        """
+        switcher = kswitch.KernelSwitcher(self._entropy)
+        try:
+            package_id = switcher.running_kernel_package()
+        except kswitch.CannotFindRunningKernel:
+            package_id = -1
+
+        # two cases here:
+        # 1. the running kernel is not installed.
+        #    In this case, we cannot safely determine what kernel
+        #    the user is using and thus, we will forcibly disable OCU.
+        # 2. the running kernel is installed.
+        #    In this case, we need to make sure that the kernel is
+        #    still available in the repositories, because we don't
+        #    want to allow OCU if the kernel should be bumped to a new
+        #    version.
+        if package_id == -1:
+            write_output("_one_click_updatable_kernel: not installed",
+                         debug=True)
+            return False
+
+        inst_repo = self._entropy.installed_repository()
+        key_slot = inst_repo.retrieveKeySlotAggregated(package_id)
+        if key_slot is None:
+            write_output("_one_click_updatable_kernel: corrupted entry",
+                         debug=True)
+            return False
+
+        repo_package_id, repository_id = self._entropy.atom_match(key_slot)
+        if repo_package_id == -1:
+            write_output(
+                "_one_click_updatable_kernel: %s not available" % (key_slot,),
+                debug=True)
+            return False
+
+        return True
 
     def _update_repositories(self, repositories, force, activity, pid,
                              authorized=False):
@@ -1617,6 +1669,9 @@ class RigoDaemonService(dbus.service.Object):
                 GLib.idle_add(
                     self.unsupported_applications,
                     manual_remove, remove)
+
+            if update:
+                GLib.idle_add(self.system_restart_needed)
 
             return AppTransactionOutcome.SUCCESS
 
@@ -2046,6 +2101,14 @@ class RigoDaemonService(dbus.service.Object):
                 _atom = entropy.dep.dep_getkey(pkg.pkgmeta['atom'])
                 obj.add(_atom)
 
+        def _abort_check_function():
+            """
+            Check if the _interrupt_activity daemon flag is up and
+            raise InterruptError.
+            """
+            if self._interrupt_activity:
+                raise InterruptError("simulated")
+
         _settings = self._entropy.Settings()
         _plg_ids = etpConst['system_settings_plugins_ids']
         client_plg_id = _plg_ids['client_plugin']
@@ -2061,6 +2124,9 @@ class RigoDaemonService(dbus.service.Object):
         is_multifetch = False
         multifetch = misc_settings.get("multifetch", 1)
         mymultifetch = multifetch
+        metaopts = {
+            "fetch_abort_function": _abort_check_function,
+            }
         if multifetch > 1:
 
             start = 0
@@ -2101,7 +2167,7 @@ class RigoDaemonService(dbus.service.Object):
                 pkg = None
                 try:
                     pkg = self._entropy.Package()
-                    pkg.prepare(opaque, pkg_action, {})
+                    pkg.prepare(opaque, pkg_action, metaopts)
 
                     msg = ":: %s" % (purple(_("Application download")),)
                     self._entropy.output(msg, count=(_count, total),
@@ -3598,6 +3664,15 @@ class RigoDaemonService(dbus.service.Object):
                      debug=True)
 
     @dbus.service.signal(dbus_interface=BUS_NAME,
+        signature='')
+    def system_restart_needed(self):
+        """
+        Notify that a System restart is needed.
+        """
+        write_output("system_restart_needed(): issued",
+                     debug=True)
+
+    @dbus.service.signal(dbus_interface=BUS_NAME,
         signature='i')
     def resources_unlock_request(self, activity):
         """
@@ -3718,9 +3793,9 @@ class RigoDaemonService(dbus.service.Object):
                      debug=True)
 
     @dbus.service.signal(dbus_interface=BUS_NAME,
-        signature='a(is)asaias')
+        signature='a(is)asaiasb')
     def updates_available(self, update, update_atoms, remove,
-                          remove_atoms):
+                          remove_atoms, one_click_updatable):
         """
         Signal all the connected Clients that there are updates
         available.
