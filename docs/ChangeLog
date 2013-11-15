@@ -1,3 +1,119 @@
+commit e5226d2d762c1bc03375d995e3ff57b74c729286
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 13:23:52 2013 +0100
+
+    Release Entropy 228
+
+commit 42ab0c38a1ff75b9e68b7a7fec5e261d5d9ba583
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 13:17:14 2013 +0100
+
+    [RigoDaemon] use KernelSwitcher.list() rather than reimplementing the same logic
+
+commit e93eb247281a32652d4a4500b8af1227a5fd3c87
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 13:14:17 2013 +0100
+
+    [RigoDaemon] implement transparent kernel-switcher support
+
+commit 51c77c13788e304f54c46f64ac176b360e21549e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 13:13:02 2013 +0100
+
+    [kswitch] fix undefined reference "kernel_atom" in PreparedSwitch.post()
+
+commit 4fbfdaea763c931c2a1a1d670ee10d2319750580
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 12:44:27 2013 +0100
+
+    [kswitch] improve API usability by external components (RigoDaemon)
+
+commit 5e523521efcb908697df86f7185ac4ee0a50e009
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 11:46:18 2013 +0100
+
+    [Rigo] use kswitch to get the kernel binary package names
+
+commit 6b3d4d99782df4339cf1e03c01bf6390ff07f42a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 11:45:57 2013 +0100
+
+    [kswitch] add virtual/linux-binary-lts variable string
+
+commit 1938f9e439052276575ded7bd86cc3b2e25ab9aa
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 10:10:55 2013 +0100
+
+    [Rigo] update rigo.pot
+
+commit fb25f279f446915f959e4168f78fabc3a4f385f0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 10:08:30 2013 +0100
+
+    [Rigo] add preferences menu to show available kernel binaries (both LTS and not)
+
+commit 718b03f5cc8cd828a6ed0798858efc8ac2fe4128
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 09:47:50 2013 +0100
+
+    [Rigo] add author bday check
+
+commit e18b93a8ff222b0b424b5792ea87a94a364adad3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 09:46:38 2013 +0100
+
+    [entropy.tools] add is_author_bday method
+    
+    The cake is a lie!
+
+commit 015bda378bf906b89916b939607a59e422dcacf7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 11 09:12:13 2013 +0100
+
+    Tagging Entropy version 227
+
+commit 2bbeae69e104d6f25b7c3eebc87ed1386f9655fa
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 11 09:12:13 2013 +0100
+
+    Release Entropy 227
+
+commit 000056afaa95b4a516213a18819403fdf02afa9b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 10 19:42:44 2013 +0100
+
+    [matter] improve ACCEPT_KEYWORDS setup basing on the "stable" parameter
+    
+    This tweak makes possible to directly skip depgraph generation if
+    the root node (the dependency to check, last node of the toposorted
+    queue) is already up-to-date (wrt to stable: yes, for example).
+    
+    This is what Portage does internally (using backupenv) and may break
+    in future releases without notice. So, keep the settings["ACCEPT_KEYWORDS"]
+    setup as a guard, to ensure the safety property.
+
+commit 939367dec8dd40057c41798dd145ea21dc03bd8f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 10 17:20:03 2013 +0100
+
+    [entropy.client.interfaces.dep] introduce rewrite_selected_matches fixup code
+    
+    See Sabayon bug #4475
+
+commit c54a6e54adf991cc7ebfc1819e47768cb847ff67
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 10 17:14:54 2013 +0100
+
+    [entropy.client.interfaces.dep] use set type for internal selected_matches
+    
+    Given the current use cases, this is faster.
+
+commit f1ef265b2fc7b82782b56ad365890b688612bd8e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 8 22:04:30 2013 +0100
+
+    Tagging Entropy version 226
+
 commit 220e55045357a8ea7a7febe78066899fcbe6fc24
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Fri Nov 8 22:04:30 2013 +0100
