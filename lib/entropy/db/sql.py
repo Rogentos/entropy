@@ -578,6 +578,13 @@ class EntropySQLRepository(EntropyRepositoryBase):
                     PRIMARY KEY (repository, from_branch, to_branch)
                 );
 
+                CREATE TABLE preserved_libs (
+                    library VARCHAR,
+                    elfclass INTEGER,
+                    path VARCHAR,
+                    PRIMARY KEY (library, path, elfclass)
+                );
+
                 CREATE TABLE xpakdata (
                     idpackage INTEGER PRIMARY KEY,
                     data BLOB
@@ -1026,8 +1033,8 @@ class EntropySQLRepository(EntropyRepositoryBase):
         """
         super(EntropySQLRepository, self).initializeRepository()
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Reimplemented from EntropyRepositoryBase. Raises NotImplementedError.
         Subclasses have to reimplement this.
@@ -2166,6 +2173,41 @@ class EntropySQLRepository(EntropyRepositoryBase):
         INSERT INTO triggers VALUES (?, ?)
         """, (package_id, const_get_buffer()(trigger),))
 
+    def insertPreservedLibrary(self, library, elfclass, path):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        """
+        self._cursor().execute("""
+        %s INTO preserved_libs VALUES (?, ?, ?)
+        """ % (self._INSERT_OR_REPLACE,), (library, elfclass, path))
+
+    def removePreservedLibrary(self, library, elfclass, path):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        """
+        self._cursor().execute("""
+        DELETE FROM preserved_libs
+        WHERE library = ? AND elfclass = ? AND path = ?
+        """, (library, elfclass, path))
+
+    def listAllPreservedLibraries(self):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        """
+        cur = self._cursor().execute("""
+        SELECT library, elfclass, path FROM preserved_libs
+        """)
+        return tuple(cur)
+
+    def retrievePreservedLibraries(self, library, elfclass):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        """
+        cur = self._cursor().execute("""
+        SELECT path FROM preserved_libs WHERE library = ? AND elfclass = ?
+        """, (library, elfclass))
+        return self._cur2tuple(cur)
+
     def insertBranchMigration(self, repository, from_branch, to_branch,
         post_migration_md5sum, post_upgrade_md5sum):
         """
@@ -3207,6 +3249,8 @@ class EntropySQLRepository(EntropyRepositoryBase):
                 excluded_deptypes_query += " AND dependencies.type != %d" % (
                     dep_type,)
 
+        cur = None
+        iter_obj = None
         if extended:
             cur = self._cursor().execute("""
             SELECT dependenciesreference.dependency,dependencies.type
@@ -3215,8 +3259,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
             dependencies.iddependency =
             dependenciesreference.iddependency %s %s""" % (
                 depstring, excluded_deptypes_query,), searchdata)
-            return tuple(entropy.dep.expand_dependencies(
-                    cur, [self]))
+            iter_obj = tuple
         else:
             cur = self._cursor().execute("""
             SELECT dependenciesreference.dependency
@@ -3225,8 +3268,12 @@ class EntropySQLRepository(EntropyRepositoryBase):
             dependencies.iddependency =
             dependenciesreference.iddependency %s %s""" % (
                 depstring, excluded_deptypes_query,), searchdata)
-            return frozenset(entropy.dep.expand_dependencies(
+            iter_obj = frozenset
+
+        if resolve_conditional_deps:
+            return iter_obj(entropy.dep.expand_dependencies(
                     cur, [self]))
+        return iter_obj(cur)
 
     def retrieveKeywords(self, package_id):
         """
@@ -4634,13 +4681,9 @@ class EntropySQLRepository(EntropyRepositoryBase):
         cur = self._cursor().execute("SELECT idpackage FROM systempackages")
         return self._cur2frozenset(cur)
 
-    def _listAllDependencies(self):
+    def listAllDependencies(self):
         """
-        List all dependencies available in repository.
-
-        @return: list of tuples of length 2 containing
-            (iddependency, dependency, name,)
-        @rtype: list
+        Reimplemented from EntropyRepositoryBase.
         """
         cur = self._cursor().execute("""
         SELECT iddependency, dependency FROM dependenciesreference
@@ -5507,7 +5550,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
             return rev_deps_data
 
         dep_data = {}
-        for iddep, atom in self._listAllDependencies():
+        for iddep, atom in self.listAllDependencies():
 
             if iddep == -1:
                 continue

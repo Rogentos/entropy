@@ -12,6 +12,7 @@
 import sys
 import os
 import argparse
+import collections
 
 from entropy.i18n import _
 from entropy.output import darkgreen, teal, brown, \
@@ -131,263 +132,61 @@ If you would like to selectively add certain packages, please see
 
         return self._call_locked, [self._commit, nsargs.repo]
 
-    def _commit(self, entropy_server):
+    def _repackage_scan(self, entropy_server):
+        """
+        If in repackage mode (self._repackage not empty), scan for packages
+        to re-package and return them.
+        """
+        packages = set()
+        spm = entropy_server.Spm()
 
-        to_be_added = set()
-        to_be_removed = set()
-        to_be_injected = set()
+        for dep in self._repackage:
+            package_id, repository_id = entropy_server.atom_match(dep)
 
-        key_sorter = lambda x: \
-            entropy_server.open_repository(x[1]).retrieveAtom(x[0])
-        repository_id = entropy_server.repository()
-        generated_packages = []
-
-        # First of all, open the repository in write mode
-        # in order to trigger package name updates on SPM.
-        # Failing to do so would cause false positives on the
-        # removal list.
-        entropy_server.open_server_repository(
-            repository_id, read_only=False, no_upload=True)
-
-        if self._repackage:
-
-            packages = []
-            dbconn = entropy_server.open_server_repository(
-                repository_id, read_only = True,
-                no_upload = True)
-
-            spm = entropy_server.Spm()
-            for item in self._repackage:
-                match = dbconn.atomMatch(item)
-                if match[0] == -1:
-                    entropy_server.output(
-                        red(_("Cannot match"))+" "+bold(item),
-                        header=darkred("  !!! "),
-                        importance=1,
-                        level="warning")
-                else:
-                    cat = dbconn.retrieveCategory(match[0])
-                    name = dbconn.retrieveName(match[0])
-                    version = dbconn.retrieveVersion(match[0])
-                    spm_pkg = os.path.join(cat, name + "-" + version)
-                    spm_build = \
-                        spm.get_installed_package_build_script_path(
-                            spm_pkg)
-                    spm_pkg_dir = os.path.dirname(spm_build)
-                    if os.path.isdir(spm_pkg_dir):
-                        packages.append((spm_pkg, 0))
-
-            if packages:
-                to_be_added |= set(packages)
-            else:
+            if package_id == -1:
                 entropy_server.output(
-                    red(_("No valid packages to repackage.")),
-                    header=brown(" * "),
-                    importance=1)
+                    "%s: %s" % (
+                        darkred(_("Cannot find package")),
+                        bold(dep),
+                        ),
+                    header=darkred(" !!! "),
+                    importance=1,
+                    level="warning")
+                continue
 
-        # normal scanning
-        entropy_server.output(
-            brown(_("Scanning...")),
-            importance=1)
-        try:
-            myadded, to_be_removed, to_be_injected = \
-                entropy_server.scan_package_changes()
-        except KeyboardInterrupt:
-            return 1
-        to_be_added |= myadded
+            repo = entropy_server.open_repository(repository_id)
+            try:
+                spm_uid = spm.resolve_package_uid(repo, package_id)
+            except spm.Error as err:
+                entropy_server.output(
+                    "%s: %s, %s" % (
+                        darkred(_("Cannot find package")),
+                        bold(dep),
+                        err,
+                        ),
+                    header=darkred(" !!! "),
+                    importance=1,
+                    level="warning")
+                continue
 
-        if self._packages:
-            to_be_removed.clear()
-            to_be_injected.clear()
-            tba = dict(((x[0], x,) for x in to_be_added))
-            tb_added_new = set()
-            for myatom in self._packages:
-                if myatom in tba:
-                    tb_added_new.add(tba.get(myatom))
-                    continue
-                try:
-                    inst_myatom = entropy_server.Spm(
-                        ).match_installed_package(myatom)
-                except KeyError:
-                    entropy_server.output(
-                        red(_("Invalid package"))+" "+bold(myatom),
-                        header=darkred("  !!! "),
-                        importance=1,
-                        level="warning")
-                    continue
-                if inst_myatom in tba:
-                    tb_added_new.add(tba.get(inst_myatom))
-            to_be_added = tb_added_new
+            spm_name = spm.convert_from_entropy_package_name(
+                repo.retrieveAtom(package_id))
+            packages.add(spm_name)
 
-        if not (len(to_be_removed)+len(to_be_added)+len(to_be_injected)):
-            entropy_server.output(
-                red(_("Zarro thinggz to do")),
-                header=brown(" * "),
-                importance=1)
-            return 0
+        return packages
 
-        if to_be_injected:
-            entropy_server.output(
-                blue(_("These would be marked as injected")),
-                header=brown(" @@ "))
-            for idpackage, repoid in sorted(to_be_injected,
-                                            key = key_sorter):
-                dbconn = entropy_server.open_server_repository(repoid,
-                    read_only = True, no_upload = True)
-                atom = dbconn.retrieveAtom(idpackage)
-                entropy_server.output("["+blue(repoid) + "] " + red(atom),
-                    header=brown("    # "))
-
-            if self._ask:
-                rc = entropy_server.ask_question(
-                    ">>   %s" % (_("Do it now ?"),))
-            else:
-                rc = _("Yes")
-
-            if rc == _("Yes"):
-                for idpackage, repoid in sorted(to_be_injected,
-                                                key = key_sorter):
-                    dbconn = entropy_server.open_server_repository(repoid,
-                        read_only = True, no_upload = True)
-                    atom = dbconn.retrieveAtom(idpackage)
-                    entropy_server.output(
-                        "%s: %s" % (blue(_("Transforming")),
-                                    red(atom)),
-                        header=brown("   <> "))
-                    entropy_server._transform_package_into_injected(
-                        idpackage, repoid)
-                entropy_server.output(blue(_("Action completed")),
-                    header=brown(" @@ "))
-
-        def show_rm(idpackage, repoid):
-            dbconn = entropy_server.open_server_repository(repoid,
-                read_only = True, no_upload = True)
-            atom = dbconn.retrieveAtom(idpackage)
-            exp_string = ''
-            pkg_expired = entropy_server._is_match_expired(
-                (idpackage, repoid,))
-            if pkg_expired:
-                exp_string = "|%s" % (purple(_("expired")),)
-            entropy_server.output(
-                "["+blue(repoid) + exp_string + "] " + red(atom),
-                header=brown("    # "))
-
-        if self._interactive and to_be_removed:
-            entropy_server.output(
-                blue(_("Select packages for removal")),
-                header=brown(" @@ "))
-            new_to_be_removed = set()
-            for idpackage, repoid in sorted(to_be_removed,
-                                            key = key_sorter):
-                show_rm(idpackage, repoid)
-                rc = entropy_server.ask_question(
-                    ">>   %s" % (_("Remove this package?"),))
-                if rc == _("Yes"):
-                    new_to_be_removed.add((idpackage, repoid,))
-            to_be_removed = new_to_be_removed
-
-        if to_be_removed:
-            entropy_server.output(
-                blue(_("These would be removed from repository")),
-                header=brown(" @@ "))
-            for idpackage, repoid in sorted(to_be_removed,
-                                            key = key_sorter):
-                show_rm(idpackage, repoid)
-
-            if self._ask:
-                rc = entropy_server.ask_question(
-                    ">>   %s" % (
-                        _("Would you like to remove them now ?"),) )
-            else:
-                rc = _("Yes")
-
-            if rc == _("Yes"):
-                remdata = {}
-                for idpackage, repoid in to_be_removed:
-                    if repoid not in remdata:
-                        remdata[repoid] = set()
-                    remdata[repoid].add(idpackage)
-                for repoid in remdata:
-                    entropy_server.remove_packages(repoid,
-                                                   remdata[repoid])
-
-        if self._interactive and to_be_added:
-            entropy_server.output(
-                blue(_("Select packages to add")),
-                header=brown(" @@ "))
-            new_to_be_added = set()
-            for tb_atom, tb_counter in sorted(to_be_added,
-                                              key = lambda x: x[0]):
-                entropy_server.output(red(tb_atom),
-                    header=brown("    # "))
-                rc = entropy_server.ask_question(
-                    ">>   %s" % (_("Add this package?"),))
-                if rc == _("Yes"):
-                    new_to_be_added.add((tb_atom, tb_counter,))
-            to_be_added = new_to_be_added
-
-        if to_be_added:
-
-            entropy_server.output(
-                blue(_("These would be added or updated")),
-                header=brown(" @@ "))
-            items = sorted([x[0] for x in to_be_added])
-            for item in items:
-                item_txt = purple(item)
-
-                # this is a spm atom
-                spm_key = entropy.dep.dep_getkey(item)
-                try:
-                    spm_slot = entropy_server.Spm(
-                        ).get_installed_package_metadata(item, "SLOT")
-                    spm_repo = entropy_server.Spm(
-                        ).get_installed_package_metadata(
-                            item, "repository")
-                except KeyError:
-                    spm_slot = None
-                    spm_repo = None
-
-                #
-                # inform user about SPM repository sources moves !!
-                #
-                etp_repo = None
-                if spm_repo is not None:
-                    pkg_id, repo_id = entropy_server.atom_match(spm_key,
-                        match_slot = spm_slot)
-                    if repo_id != 1:
-                        repo_db = entropy_server.open_server_repository(
-                            repo_id, just_reading = True)
-                        etp_repo = repo_db.retrieveSpmRepository(pkg_id)
-
-                        if (etp_repo is not None) and \
-                                (etp_repo != spm_repo):
-                            item_txt += ' [%s {%s=>%s}]' % (
-                                bold(_("warning")),
-                                darkgreen(etp_repo), blue(spm_repo),)
-
-                entropy_server.output(item_txt, header=brown("  # "))
-
-            if self._ask:
-                rc = entropy_server.ask_question(">>   %s (%s %s)" % (
-                        _("Would you like to package them now ?"),
-                        _("inside"),
-                        repository_id,
-                    )
-                )
-                if rc == _("No"):
-                    return 0
-
-            problems = entropy_server._check_config_file_updates()
-            if problems:
-                return 1
-
-        # package them
+    def _compress_packages(self, entropy_server, repository_id, packages):
+        """
+        Compress (and generate package tarball) the list of given
+        spm package names inside the given Entropy repository.
+        """
         entropy_server.output(
             blue(_("Compressing packages")),
             header=brown(" @@ "))
-        store_dir = entropy_server._get_local_store_directory(
-            repository_id)
-        # user could have removed it. Oh dear lord!
+
+        generated_packages = collections.deque()
+        store_dir = entropy_server._get_local_store_directory(repository_id)
+
         if not os.path.isdir(store_dir):
             try:
                 os.makedirs(store_dir)
@@ -397,19 +196,23 @@ If you would like to selectively add certain packages, please see
                     header=brown(" !!! "),
                     importance=1,
                     level="error")
-                return 1
-        for x in sorted(to_be_added):
-            entropy_server.output(teal(x[0]),
-                                  header=brown("    # "))
+                return generated_packages, 1
+
+        for count, spm_name in enumerate(packages, 1):
+            entropy_server.output(
+                teal(spm_name),
+                header=brown("  # "),
+                count=(count, len(packages)))
+
             try:
-                pkg_list = entropy_server.Spm().generate_package(x[0],
+                pkg_list = entropy_server.Spm().generate_package(spm_name,
                     store_dir)
                 generated_packages.append(pkg_list)
             except OSError:
                 entropy.tools.print_traceback()
                 entropy_server.output(
                     bold(_("Ignoring broken Spm entry, please recompile it")),
-                    header=brown("    !!! "),
+                    header=brown("  !!! "),
                     importance=1,
                     level="warning")
 
@@ -417,23 +220,301 @@ If you would like to selectively add certain packages, please see
             entropy_server.output(
                 red(_("Nothing to do, check later.")),
                 header=brown(" * "))
-            # then exit gracefully
+            return generated_packages, 0
+
+        return generated_packages, None
+
+    def _inject_packages(self, entropy_server, package_matches):
+        """
+        Mark the given Entropy packages as injected in the repository.
+        """
+        entropy_server.output(
+            blue(_("These would be marked as injected")),
+            header=brown(" @@ "))
+
+        for package_id, repository_id in package_matches:
+            repo = entropy_server.open_repository(repository_id)
+            atom = repo.retrieveAtom(package_id)
+
+            entropy_server.output(
+                "[%s] %s" % (
+                    blue(repository_id),
+                    darkred(atom),
+                    ),
+                header=brown("    # "))
+
+        if self._ask:
+            rc = entropy_server.ask_question(
+                ">>   %s" % (_("Do it now ?"),))
+            if rc == _("No"):
+                return
+
+        for package_id, repository_id in package_matches:
+
+            repo = entropy_server.open_repository(repository_id)
+            atom = repo.retrieveAtom(package_id)
+            entropy_server.output(
+                "%s: %s" % (
+                    blue(_("Transforming")),
+                    red(atom)),
+                header=brown("   <> "))
+
+            entropy_server._transform_package_into_injected(
+                package_id, repository_id)
+
+        entropy_server.commit_repositories()
+
+        entropy_server.output(blue(_("Action completed")),
+            header=brown(" @@ "))
+
+    def _add_packages(self, entropy_server, repository_id, packages):
+        """
+        Add the given Source Package Manager packages to the given
+        Entropy repository.
+        """
+        def asker(spm_name):
+            entropy_server.output(
+                darkred(spm_name),
+                header=brown("    # "))
+            rc = entropy_server.ask_question(
+                ">>   %s" % (_("Add this package?"),))
+            return rc == _("Yes")
+
+        if self._interactive:
+            entropy_server.output(
+                blue(_("Select packages to add")),
+                header=brown(" @@ "))
+            packages = list(filter(asker, packages))
+
+        if not packages:
+            entropy_server.output(
+                red(_("Nothing to add")),
+                header=brown(" @@ "),
+                importance=1)
             return 0
 
-        etp_pkg_files = [(pkg_list, False) for pkg_list in \
-                             generated_packages]
-        idpackages = entropy_server.add_packages_to_repository(
+        entropy_server.output(
+            blue(_("These would be added or updated")),
+            header=brown(" @@ "))
+
+        for spm_name in packages:
+            spm_name_txt = purple(spm_name)
+
+            # TODO: this is a SPM package, we should use SPM functions
+            spm_key = entropy.dep.dep_getkey(spm_name)
+            try:
+                spm_slot = entropy_server.Spm(
+                    ).get_installed_package_metadata(spm_name, "SLOT")
+                spm_repo = entropy_server.Spm(
+                    ).get_installed_package_metadata(
+                        spm_name, "repository")
+            except KeyError:
+                spm_slot = None
+                spm_repo = None
+
+            # inform user about SPM repository sources moves
+            etp_repo = None
+            if spm_repo is not None:
+                pkg_id, repo_id = entropy_server.atom_match(spm_key,
+                    match_slot = spm_slot)
+
+                if pkg_id != -1:
+                    repo_db = entropy_server.open_repository(repo_id)
+                    etp_repo = repo_db.retrieveSpmRepository(pkg_id)
+
+                    if (etp_repo is not None) and \
+                            (etp_repo != spm_repo):
+                        spm_name_txt += ' [%s {%s=>%s}]' % (
+                            bold(_("warning")),
+                            darkgreen(etp_repo), blue(spm_repo),)
+
+            entropy_server.output(spm_name_txt, header=brown("  # "))
+
+        if self._ask:
+            rc = entropy_server.ask_question(">>   %s (%s %s)" % (
+                    _("Would you like to package them now ?"),
+                    _("inside"),
+                    repository_id,
+                )
+            )
+            if rc == _("No"):
+                return 0
+
+        problems = entropy_server._check_config_file_updates()
+        if problems:
+            return 1
+
+        generated, exit_st = self._compress_packages(
+            entropy_server, repository_id, packages)
+        if exit_st is not None:
+            return exit_st
+
+        etp_pkg_files = [(pkg_list, False) for pkg_list in generated]
+        package_ids = entropy_server.add_packages_to_repository(
             repository_id, etp_pkg_files)
 
-        if idpackages:
-            # checking dependencies and print issues
-            entropy_server.extended_dependencies_test([repository_id])
         entropy_server.commit_repositories()
-        entropy_server.output(red("%s: " % (_("Statistics"),) ) + \
-            blue("%s: " % (_("Entries handled"),) ) + \
-                bold(str(len(idpackages))),
+
+        if package_ids:
+            entropy_server.extended_dependencies_test([repository_id])
+
+        entropy_server.output(
+            "%s: %d" % (
+                blue(_("Packages handled")),
+                len(package_ids),),
             header=darkgreen(" * "))
         return 0
+
+    def _remove_packages(self, entropy_server, package_matches):
+        """
+        Remove the given Entropy packages from their repositories.
+        """
+
+        def show_rm(pkg_id, pkg_repo):
+            repo = entropy_server.open_repository(pkg_repo)
+            atom = repo.retrieveAtom(pkg_id)
+            exp_string = ''
+            pkg_expired = entropy_server._is_match_expired(
+                (pkg_id, pkg_repo,))
+            if pkg_expired:
+                exp_string = "|%s" % (purple(_("expired")),)
+
+            entropy_server.output(
+                "[%s%s] %s" % (
+                    blue(pkg_repo),
+                    exp_string,
+                    darkred(atom),),
+                header=brown("    # "))
+
+        def asker(package_match):
+            pkg_id, pkg_repo = package_match
+            show_rm(pkg_id, pkg_repo)
+            rc = entropy_server.ask_question(
+                ">>   %s" % (_("Remove this package?"),))
+            return rc == _("Yes")
+
+        if self._interactive:
+            entropy_server.output(
+                blue(_("Select packages for removal")),
+                header=brown(" @@ "))
+            package_matches = list(filter(asker, package_matches))
+
+        if not package_matches:
+            return
+
+        entropy_server.output(
+            blue(_("These would be removed from repository")),
+            header=brown(" @@ "))
+        for package_id, repository_id in package_matches:
+            show_rm(package_id, repository_id)
+
+        if self._ask:
+            rc = entropy_server.ask_question(
+                ">>   %s" % (
+                    _("Would you like to remove them now ?"),) )
+            if rc == _("No"):
+                return
+
+        remdata = {}
+        for package_id, repository_id in package_matches:
+            obj = remdata.setdefault(repository_id, set())
+            obj.add(package_id)
+
+        for repository_id, packages in remdata.items():
+            entropy_server.remove_packages(repository_id, packages)
+
+        entropy_server.commit_repositories()
+
+    def _commit(self, entropy_server):
+
+        key_sorter = lambda x: entropy_server.open_repository(
+            x[1]).retrieveAtom(x[0])
+
+        repository_id = entropy_server.repository()
+        # First of all, open the repository in write mode
+        # in order to trigger package name updates on SPM.
+        # Failing to do so would cause false positives on the
+        # removal list.
+        entropy_server.open_server_repository(
+            repository_id, read_only=False,
+            no_upload=True)
+
+        to_be_added = set()
+        to_be_removed = set()
+        to_be_injected = set()
+
+        entropy_server.output(
+            brown(_("Scanning...")),
+            importance=1)
+
+        if self._repackage:
+            repack_added = self._repackage_scan(entropy_server)
+            if not repack_added:
+                entropy_server.output(
+                    red(_("No valid packages to repackage.")),
+                    header=brown(" * "),
+                    importance=1,
+                    level="error")
+                return 1
+            to_be_added |= repack_added
+        else:
+            (scan_added,
+             scan_removed,
+             scan_injected) = entropy_server.scan_package_changes()
+
+            to_be_added |= set((x[0] for x in scan_added))
+            to_be_removed |= scan_removed
+            to_be_injected |= scan_injected
+
+        if self._packages:
+            to_be_removed.clear()
+            to_be_injected.clear()
+
+            def pkg_filter(spm_name):
+                if spm_name in to_be_added:
+                    return spm_name
+                try:
+                    return entropy_server.Spm(
+                        ).match_installed_package(spm_name)
+                except KeyError:
+                    entropy_server.output(
+                        "%s: %s" % (
+                            darkred(_("Invalid package")),
+                            bold(spm_name)),
+                        header=darkred(" !!! "),
+                        importance=1,
+                        level="warning")
+                    return None
+
+                if inst_spm_name in to_be_added:
+                    return inst_spm_name
+                return None
+
+            to_be_added = set(map(pkg_filter, self._packages))
+            to_be_added.discard(None)
+
+        if not (to_be_removed or to_be_added or to_be_injected):
+            entropy_server.output(
+                red(_("Zarro thinggz to do")),
+                header=brown(" * "),
+                importance=1)
+            return 0
+
+        exit_st = 0
+        if to_be_injected:
+            injected_s = sorted(to_be_injected, key=key_sorter)
+            self._inject_packages(entropy_server, injected_s)
+
+        if to_be_removed:
+            removed_s = sorted(to_be_removed, key=key_sorter)
+            self._remove_packages(entropy_server, removed_s)
+
+        if to_be_added:
+            # drop spm_uid, no longer needed
+            added_s = sorted(to_be_added)
+            exit_st = self._add_packages(entropy_server, repository_id, added_s)
+
+        return exit_st
 
 
 EitCommandDescriptor.register(

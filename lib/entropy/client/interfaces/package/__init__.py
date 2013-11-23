@@ -24,7 +24,6 @@ from entropy.exceptions import PermissionDenied, SPMError
 from entropy.i18n import _, ngettext
 from entropy.output import brown, blue, bold, darkgreen, \
     darkblue, red, purple, darkred, teal
-from entropy.client.interfaces.client import Client
 from entropy.client.mirrors import StatusInterface
 from entropy.core.settings.base import SystemSettings
 from entropy.security import Repository as RepositorySecurity
@@ -33,300 +32,13 @@ from entropy.fetchers import UrlFetcher
 import entropy.dep
 import entropy.tools
 
-class Package:
+from . import _content as Content
 
-    class FileContentReader:
-
-        def __init__(self, path, enc=None):
-            if enc is None:
-                self._enc = etpConst['conf_encoding']
-            else:
-                self._enc = enc
-            self._cpath = path
-            self._f = None
-            self._eof = False
-
-        def _open_f(self):
-            # opening the file in universal newline mode
-            # fixes the readline() issues wrt
-            # truncated lines.
-            if isinstance(self._cpath, int):
-                self._f = entropy.tools.codecs_fdopen(
-                    self._cpath, "rU", self._enc)
-            else:
-                self._f = codecs.open(
-                    self._cpath, "rU", self._enc)
-
-        def __iter__(self):
-            # reset object status, this makes possible
-            # to reuse the iterator more than once
-            # restarting from the beginning. It is really
-            # important for scenarios where transactions
-            # have to be rolled back and replayed.
-            self.close()
-            self._open_f()
-            # reset EOF status on each new iteration
-            self._eof = False
-            return self
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, tb):
-            self.close()
-
-        def __next__(self):
-            return self.next()
-
-        def next(self):
-            if self._eof:
-                raise StopIteration()
-            if self._f is None:
-                self._open_f()
-
-            line = self._f.readline()
-            if not line:
-                self.close()
-                self._eof = True
-                raise StopIteration()
-
-            # non-deterministic BUG with
-            # ca-certificates and Python crappy
-            # API causes readline() to return
-            # partial lines when non ASCII cruft
-            # is on the line. This is probably a
-            # Python bug.
-            # Example of partial readline():
-            # 0|obj|/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\xc3\x85
-            # and the next call:
-            # \xc2\x91tan\xc3\x83\xc2\xbas\xc3\x83\xc2\xadtv\xc3\x83\xc2\xa1ny.crt\n
-            # Try to workaround it by reading ahead
-            # if line does not end with \n
-            # HOWEVER: opening the file in
-            # Universal Newline mode fixes it.
-            # But let's keep the check for QA.
-            # 2012-08-14: is has been observed that
-            # Universal Newline mode is not enough
-            # to avoid this issue.
-            while not line.endswith("\n"):
-                part_line = self._f.readline()
-                line += part_line
-                sys.stderr.write(
-                    "FileContentReader, broken readline()"
-                    ", executing fixup code\n")
-                sys.stderr.write("%s\n" % (repr(part_line),))
-                # break infinite loops
-                # and let it crash
-                if not part_line: # EOF
-                    break
-
-            _package_id, _ftype, _path = line[:-1].split("|", 2)
-            # must be legal or die!
-            _package_id = int(_package_id)
-            return _package_id, _path, _ftype
-
-        def close(self):
-            if self._f is not None:
-                self._f.close()
-                self._f = None
-
-    class FileContentWriter:
-
-        TMP_SUFFIX = "__filter_tmp"
-
-        def __init__(self, path, enc=None):
-            if enc is None:
-                self._enc = etpConst['conf_encoding']
-            else:
-                self._enc = enc
-            self._cpath = path
-            # callers expect that file is created
-            # on open object instantiation, don't
-            # remove this or things like os.rename()
-            # will fail
-            self._open_f()
-
-        def _open_f(self):
-            if isinstance(self._cpath, int):
-                self._f = entropy.tools.codecs_fdopen(
-                    self._cpath, "w", self._enc)
-            else:
-                self._f = codecs.open(
-                    self._cpath, "w", self._enc)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, tb):
-            self.close()
-
-        def write(self, package_id, path, ftype):
-            if self._f is None:
-                self._open_f()
-
-            if package_id is not None:
-                self._f.write(str(package_id))
-            else:
-                self._f.write("0")
-            self._f.write("|")
-            self._f.write(ftype)
-            self._f.write("|")
-            self._f.write(path)
-            self._f.write("\n")
-
-        def close(self):
-            if self._f is not None:
-                self._f.flush()
-                self._f.close()
-                self._f = None
-
-    class FileContentSafetyWriter:
-
-        def __init__(self, path, enc=None):
-            if enc is None:
-                self._enc = etpConst['conf_encoding']
-            else:
-                self._enc = enc
-            self._cpath = path
-            # callers expect that file is created
-            # on open object instantiation, don't
-            # remove this or things like os.rename()
-            # will fail
-            self._open_f()
-
-        def _open_f(self):
-            if isinstance(self._cpath, int):
-                self._f = entropy.tools.codecs_fdopen(
-                    self._cpath, "w", self._enc)
-            else:
-                self._f = codecs.open(
-                    self._cpath, "w", self._enc)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, tb):
-            self.close()
-
-        def write(self, path, sha256, mtime):
-            if self._f is None:
-                self._open_f()
-
-            self._f.write("%f" % (mtime,))
-            self._f.write("|")
-            self._f.write(sha256)
-            self._f.write("|")
-            self._f.write(path)
-            self._f.write("\n")
-
-        def close(self):
-            if self._f is not None:
-                self._f.flush()
-                self._f.close()
-                self._f = None
-
-    class FileContentSafetyReader:
-
-        def __init__(self, path, enc=None):
-            if enc is None:
-                self._enc = etpConst['conf_encoding']
-            else:
-                self._enc = enc
-            self._cpath = path
-            self._f = None
-            self._eof = False
-
-        def _open_f(self):
-            # opening the file in universal newline mode
-            # fixes the readline() issues wrt
-            # truncated lines.
-            if isinstance(self._cpath, int):
-                self._f = entropy.tools.codecs_fdopen(
-                    self._cpath, "rU", self._enc)
-            else:
-                self._f = codecs.open(
-                    self._cpath, "rU", self._enc)
-
-        def __iter__(self):
-            # reset object status, this makes possible
-            # to reuse the iterator more than once
-            # restarting from the beginning. It is really
-            # important for scenarios where transactions
-            # have to be rolled back and replayed.
-            self.close()
-            self._open_f()
-            # reset EOF status on each new iteration
-            self._eof = False
-            return self
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, tb):
-            self.close()
-
-        def __next__(self):
-            return self.next()
-
-        def next(self):
-            if self._eof:
-                raise StopIteration()
-            if self._f is None:
-                self._open_f()
-
-            line = self._f.readline()
-            if not line:
-                self.close()
-                self._eof = True
-                raise StopIteration()
-
-            # non-deterministic BUG with
-            # ca-certificates and Python crappy
-            # API causes readline() to return
-            # partial lines when non ASCII cruft
-            # is on the line. This is probably a
-            # Python bug.
-            # Example of partial readline():
-            # 0|obj|/usr/share/ca-certificates/mozilla/NetLock_Arany_=Class_Gold=_F\xc3\x85
-            # and the next call:
-            # \xc2\x91tan\xc3\x83\xc2\xbas\xc3\x83\xc2\xadtv\xc3\x83\xc2\xa1ny.crt\n
-            # Try to workaround it by reading ahead
-            # if line does not end with \n
-            # HOWEVER: opening the file in
-            # Universal Newline mode fixes it.
-            # But let's keep the check for QA.
-            # 2012-08-14: is has been observed that
-            # Universal Newline mode is not enough
-            # to avoid this issue.
-            while not line.endswith("\n"):
-                part_line = self._f.readline()
-                line += part_line
-                sys.stderr.write(
-                    "FileContentReader, broken readline()"
-                    ", executing fixup code\n")
-                sys.stderr.write("%s\n" % (repr(part_line),))
-                # break infinite loops
-                # and let it crash
-                if not part_line: # EOF
-                    break
-
-            _mtime, _sha256, _path = line[:-1].split("|", 2)
-            # must be legal or die!
-            _mtime = float(_mtime)
-            return _path, _sha256, _mtime
-
-        def close(self):
-            if self._f is not None:
-                self._f.close()
-                self._f = None
+class Package(object):
 
     def __init__(self, entropy_client):
 
-        if not isinstance(entropy_client, Client):
-            mytxt = "A valid Client instance or subclass is needed"
-            raise AttributeError(mytxt)
         self._entropy = entropy_client
-
         self._settings = SystemSettings()
         self.pkgmeta = {}
         self.__prepared = False
@@ -452,7 +164,7 @@ class Package:
                 return {}
             ck_map = {}
             ck_map_id = 0
-            for pkg_id, repo, url, dest_path, cksum in url_data:
+            for _pkg_id, _repo, _url, _dest_path, cksum in url_data:
                 ck_map_id += 1
                 if cksum is not None:
                     ck_map[ck_map_id] = cksum
@@ -464,7 +176,7 @@ class Package:
         diff_map = {}
 
         # setup directories
-        for pkg_id, repo, url, dest_path, cksum in url_data:
+        for pkg_id, repo, url, dest_path, _cksum in url_data:
             dest_dir = os.path.dirname(dest_path)
             if not os.path.isdir(dest_dir):
                 os.makedirs(dest_dir, 0o775)
@@ -483,7 +195,7 @@ class Package:
         if url_data:
 
             url_path_list = []
-            for pkg_id, repo, url, dest_path, cksum in url_data:
+            for pkg_id, repo, url, dest_path, _cksum in url_data:
                 url_path_list.append((url, dest_path,))
                 self._setup_differential_download(
                     self._entropy._multiple_url_fetcher, url, resume, dest_path,
@@ -550,7 +262,7 @@ class Package:
         excluded_data = self._settings['repositories']['excluded']
 
         repo_uris = {}
-        for pkg_id, repo, fname, cksum, signatures in download_list:
+        for pkg_id, repo, fname, cksum, _signatures in download_list:
             repo_db = self._entropy.open_repository(repo)
             # grab original repo, if any and use it if available
             # this is done in order to support "equo repo merge" feature
@@ -636,7 +348,7 @@ class Package:
             return True
 
         def show_download_summary(down_list):
-            for pkg_id, repo, fname, cksum, signatures in down_list:
+            for _pkg_id, repo, fname, _cksum, _signatures in down_list:
                 best_mirror = get_best_mirror(repo)
                 mirrorcount = repo_uris[repo].index(best_mirror)+1
                 mytxt = "( mirror #%s ) " % (mirrorcount,)
@@ -652,7 +364,7 @@ class Package:
                 )
 
         def show_successful_download(down_list, data_transfer):
-            for pkg_id, repo, fname, cksum, signatures in down_list:
+            for _pkg_id, repo, fname, _cksum, _signatures in down_list:
                 best_mirror = get_best_mirror(repo)
                 mirrorcount = repo_uris[repo].index(best_mirror)+1
                 mytxt = "( mirror #%s ) " % (mirrorcount,)
@@ -680,7 +392,7 @@ class Package:
             )
 
         def show_download_error(down_list, rc):
-            for pkg_id, repo, fname, cksum, signatures in down_list:
+            for _pkg_id, repo, _fname, _cksum, _signatures in down_list:
                 best_mirror = get_best_mirror(repo)
                 mirrorcount = repo_uris[repo].index(best_mirror)+1
                 mytxt = "( mirror #%s ) " % (mirrorcount,)
@@ -689,7 +401,8 @@ class Package:
                     red(self._get_url_name(best_mirror)),
                 )
                 if rc == -1:
-                    mytxt += " - %s." % (_("data not available on this mirror"),)
+                    mytxt += " - %s." % (
+                        _("data not available on this mirror"),)
                 elif rc == -2:
                     mirror_status.add_failing_mirror(best_mirror, 1)
                     mytxt += " - %s." % (_("wrong checksum"),)
@@ -711,7 +424,7 @@ class Package:
 
         def remove_failing_mirrors(repos):
             for repo in repos:
-                best_mirror = get_best_mirror(repo)
+                get_best_mirror(repo)
                 if remaining[repo]:
                     remaining[repo].pop(0)
 
@@ -725,7 +438,7 @@ class Package:
             while True:
 
                 fetch_files_list = []
-                for pkg_id, repo, fname, cksum, signatures in my_download_list:
+                for pkg_id, repo, fname, cksum, _signatures in my_download_list:
                     best_mirror = get_best_mirror(repo)
                     # set working mirror, dont care if its None
                     mirror_status.set_working_mirror(best_mirror)
@@ -1054,9 +767,9 @@ class Package:
 
         # when called by __fetch_file, which is called by _download_package
         # which is called by _match_checksum, which is called by
-        # multi_match_checksum, removeidpackage metadatum is not available
+        # multi_match_checksum, removepackage_id metadatum is not available
         # So, be fault tolerant.
-        installed_package_id = self.pkgmeta.get('removeidpackage', -1)
+        installed_package_id = self.pkgmeta.get('removepackage_id', -1)
 
         # fresh install, cannot fetch edelta, edelta only works for installed
         # packages, by design.
@@ -1077,7 +790,7 @@ class Package:
         max_tries = 2
         edelta_approved = False
         data_transfer = 0
-        download_plan = [(edelta_url, edelta_save_path) for x in \
+        download_plan = [(edelta_url, edelta_save_path) for _x in \
             range(max_tries)]
         delta_resume = resume
         fetch_abort_function = self.pkgmeta.get('fetch_abort_function')
@@ -1402,8 +1115,8 @@ class Package:
                         elif rc == -2:
                             mirror_status.add_failing_mirror(uri, 1)
                             error_message += " - %s." % (_("wrong checksum"),)
-                            # If file is fetched (with no resume) and its complete
-                            # better to enforce resume to False.
+                            # If file is fetched (with no resume) and its
+                            # complete better to enforce resume to False.
                             if (data_transfer < 1) and do_resume:
                                 error_message += " %s." % (
                                     _("Disabling resume"),)
@@ -1899,6 +1612,20 @@ class Package:
 
         return 0
 
+    def _setup_config_protect_and_mask(self, installed_repository,
+                                       installed_package_id):
+        """
+        Setup the config_protect+mask metadata object.
+        Make sure to call this before the package goes away from the
+        repository.
+        """
+        protect = self._get_config_protect(
+            installed_repository, installed_package_id)
+        mask = self._get_config_protect(
+            installed_repository, installed_package_id, mask = True)
+
+        self.pkgmeta['config_protect+mask'] = (protect, mask)
+
     def __remove_package(self):
 
         self._entropy.clear_cache()
@@ -1919,30 +1646,35 @@ class Package:
         )
         inst_repo = self._entropy.installed_repository()
         automerge_metadata = inst_repo.retrieveAutomergefiles(
-            self.pkgmeta['removeidpackage'], get_dict = True)
-        inst_repo.removePackage(
-            self.pkgmeta['removeidpackage'])
+            self.pkgmeta['removepackage_id'], get_dict = True)
+        # setup config_protect and config_protect_mask metadata before it's
+        # too late.
+        self._setup_config_protect_and_mask(
+            inst_repo, self.pkgmeta['removepackage_id'])
+
+        inst_repo.removePackage(self.pkgmeta['removepackage_id'])
 
         # commit changes, to avoid users pressing CTRL+C and still having
         # all the db entries in, so we need to commit at every iteration
         inst_repo.commit()
 
-        self._remove_content_from_system(self.pkgmeta['removeidpackage'],
-            automerge_metadata)
+        self._remove_content_from_system(
+            automerge_metadata = automerge_metadata)
 
         return 0
 
     def _remove_content_from_system_loop(
-        self, remove_content, directories, directories_cache,
-        not_removed_due_to_collisions, colliding_path_messages,
-        automerge_metadata, col_protect, protect, mask, sys_root):
+            self, remove_content, directories, directories_cache,
+            not_removed_due_to_collisions, colliding_path_messages,
+            automerge_metadata, col_protect, protect, mask, protectskip,
+            sys_root):
         """
         Body of the _remove_content_from_system() method.
         """
         inst_repo = self._entropy.installed_repository()
         info_dirs = self._get_info_directories()
 
-        for _pkg_id, item, ftype in remove_content:
+        for _pkg_id, item, _ftype in remove_content:
 
             if not item:
                 continue # empty element??
@@ -1972,11 +1704,11 @@ class Package:
             if not self.pkgmeta['removeconfig']:
 
                 protected_item_test = sys_root_item
-                in_mask, protected, x, do_continue = \
-                    self._handle_config_protect(
-                        protect, mask, None, protected_item_test,
-                        do_allocation_check = False, do_quiet = True
-                    )
+                (in_mask, protected, _x,
+                 do_continue) = self._handle_config_protect(
+                     protect, mask, protectskip, None, protected_item_test,
+                     do_allocation_check = False, do_quiet = True
+                 )
 
                 if do_continue:
                     protected = True
@@ -2107,13 +1839,10 @@ class Package:
 
                 directories_cache.add(dirobj)
 
-    def _remove_content_from_system(self, installed_package_id,
-        automerge_metadata = None):
+    def _remove_content_from_system(self, automerge_metadata = None):
         """
         Remove installed package content (files/directories) from live system.
 
-        @param installed_package_id: Entropy Repository package identifier
-        @type installed_package_id: int
         @keyword automerge_metadata: Entropy "automerge metadata"
         @type automerge_metadata: dict
         """
@@ -2123,10 +1852,6 @@ class Package:
         sys_root = etpConst['systemroot']
         # load CONFIG_PROTECT and CONFIG_PROTECT_MASK
         sys_settings = self._settings
-        protect = self.__get_installed_package_config_protect(
-            installed_package_id)
-        mask = self.__get_installed_package_config_protect(installed_package_id,
-            mask = True)
 
         sys_set_plg_id = \
             etpConst['system_settings_plugins_ids']['client_plugin']
@@ -2138,18 +1863,26 @@ class Package:
         not_removed_due_to_collisions = set()
         colliding_path_messages = set()
 
+        protect_mask = self.pkgmeta['config_protect+mask']
+        if protect_mask is not None:
+            protect, mask = protect_mask
+        else:
+            protect, mask = set(), set()
+        protectskip = self._get_config_protect_skip()
+
         remove_content = None
         try:
             # simulate a removecontent list/set object
             remove_content = []
             if self.pkgmeta['removecontent_file'] is not None:
-                remove_content = Package.FileContentReader(
+                remove_content = Content.FileContentReader(
                     self.pkgmeta['removecontent_file'])
 
             self._remove_content_from_system_loop(
                 remove_content, directories, directories_cache,
                 not_removed_due_to_collisions, colliding_path_messages,
-                automerge_metadata, col_protect, protect, mask, sys_root)
+                automerge_metadata, col_protect, protect, mask, protectskip,
+                sys_root)
 
         finally:
             if hasattr(remove_content, "close"):
@@ -2170,7 +1903,8 @@ class Package:
                 level = "warning",
                 header = red("   ## ")
             )
-            self._entropy.logger.log("[Package]", etpConst['logging']['normal_loglevel_id'],
+            self._entropy.logger.log(
+                "[Package]", etpConst['logging']['normal_loglevel_id'],
                 "Collision found during removal of %s - cannot overwrite" % (
                     path,)
             )
@@ -2256,10 +1990,10 @@ class Package:
 
         inst_repo = self._entropy.installed_repository()
 
-        if self.pkgmeta['removeidpackage'] != -1:
+        if self.pkgmeta['removepackage_id'] != -1:
             self.pkgmeta['already_protected_config_files'] = \
                 inst_repo.retrieveAutomergefiles(
-                    self.pkgmeta['removeidpackage'], get_dict = True
+                    self.pkgmeta['removepackage_id'], get_dict = True
                 )
 
         # items_*installed will be filled by _move_image_to_system
@@ -2406,13 +2140,12 @@ class Package:
         Copy package from repository to installed packages one.
         """
 
-        def _merge_removecontent(repo, _package_id):
-            inst_repo = self._entropy.installed_repository()
+        def _merge_removecontent(inst_repo, repo, _package_id):
             # NOTE: this could be a source of memory consumption
             # but generally, the difference between two contents
             # is really small
             content_diff = list(inst_repo.contentDiff(
-                self.pkgmeta['removeidpackage'],
+                self.pkgmeta['removepackage_id'],
                 repo,
                 _package_id,
                 extended=True))
@@ -2435,7 +2168,7 @@ class Package:
                     self.pkgmeta['removecontent_file'],
                     content_diff, _cmp_func)
 
-        # fetch info
+        inst_repo = self._entropy.installed_repository()
         smart_pkg = self.pkgmeta['smartpackage']
         dbconn = self._entropy.open_repository(self.pkgmeta['repository'])
         splitdebug, splitdebug_dirs = self.pkgmeta['splitdebug'], \
@@ -2443,32 +2176,33 @@ class Package:
 
         if smart_pkg or self.pkgmeta['merge_from']:
 
-            data = dbconn.getPackageData(self.pkgmeta['idpackage'],
+            data = dbconn.getPackageData(self.pkgmeta['package_id'],
                 content_insert_formatted = True,
                 get_changelog = False, get_content = False,
                 get_content_safety = False)
 
             content = dbconn.retrieveContentIter(
-                self.pkgmeta['idpackage'])
+                self.pkgmeta['package_id'])
             content_file = self.__generate_content_file(
-                content, package_id = self.pkgmeta['idpackage'],
+                content, package_id = self.pkgmeta['package_id'],
                 filter_splitdebug = True,
                 splitdebug = splitdebug,
                 splitdebug_dirs = splitdebug_dirs)
 
             content_safety = dbconn.retrieveContentSafetyIter(
-                self.pkgmeta['idpackage'])
+                self.pkgmeta['package_id'])
             content_safety_file = self.__generate_content_safety_file(
                 content_safety)
 
-            if self.pkgmeta['removeidpackage'] != -1 and \
+            if self.pkgmeta['removepackage_id'] != -1 and \
                     self.pkgmeta['removecontent_file'] is not None:
-                _merge_removecontent(dbconn, self.pkgmeta['idpackage'])
+                _merge_removecontent(
+                    inst_repo, dbconn, self.pkgmeta['package_id'])
 
         else:
 
             # normal repositories
-            data = dbconn.getPackageData(self.pkgmeta['idpackage'],
+            data = dbconn.getPackageData(self.pkgmeta['package_id'],
                 get_content = False, get_changelog = False)
 
             # indexing_override = False : no need to index tables
@@ -2483,25 +2217,25 @@ class Package:
 
             # it is safe to consider that package dbs coming from repos
             # contain only one entry
-            pkg_idpackage = sorted(pkg_dbconn.listAllPackageIds(),
+            pkg_package_id = sorted(pkg_dbconn.listAllPackageIds(),
                 reverse = True)[0]
             content = pkg_dbconn.retrieveContentIter(
-                pkg_idpackage)
+                pkg_package_id)
             content_file = self.__generate_content_file(
-                content, package_id = self.pkgmeta['idpackage'],
+                content, package_id = self.pkgmeta['package_id'],
                 filter_splitdebug = True,
                 splitdebug = splitdebug,
                 splitdebug_dirs = splitdebug_dirs)
 
             # setup content safety metadata, get from package
             content_safety = pkg_dbconn.retrieveContentSafetyIter(
-                pkg_idpackage)
+                pkg_package_id)
             content_safety_file = self.__generate_content_safety_file(
                 content_safety)
 
-            if self.pkgmeta['removeidpackage'] != -1 and \
+            if self.pkgmeta['removepackage_id'] != -1 and \
                     self.pkgmeta['removecontent_file'] is not None:
-                _merge_removecontent(pkg_dbconn, pkg_idpackage)
+                _merge_removecontent(inst_repo, pkg_dbconn, pkg_package_id)
 
             pkg_dbconn.close()
 
@@ -2519,6 +2253,13 @@ class Package:
             self.__filter_out_files_installed_on_diff_path(
                 self.pkgmeta['removecontent_file'],
                 items_installed)
+
+        # setup config_protect and config_protect_mask metadata before it's
+        # too late.
+        installed_package_id = self.pkgmeta['removepackage_id']
+        if installed_package_id != -1:
+            self._setup_config_protect_and_mask(
+                inst_repo, installed_package_id)
 
         # filter out files not installed from content metadata
         # these include splitdebug files, when splitdebug is
@@ -2559,18 +2300,16 @@ class Package:
         # disable, we're not going to add those entries, for example)
         data['extra_download'] = self.pkgmeta['extra_download']
 
-        inst_repo = self._entropy.installed_repository()
-
         data['content'] = None
         data['content_safety'] = None
         try:
             # now we are ready to craft a 'content' iter object
-            data['content'] = Package.FileContentReader(
+            data['content'] = Content.FileContentReader(
                 content_file)
-            data['content_safety'] = Package.FileContentSafetyReader(
+            data['content_safety'] = Content.FileContentSafetyReader(
                 content_safety_file)
-            idpackage = inst_repo.handlePackage(
-                data, forcedRevision = data['revision'],
+            package_id = inst_repo.handlePackage(
+                data, revision = data['revision'],
                 formattedContent = True)
         finally:
             if data['content'] is not None:
@@ -2588,16 +2327,16 @@ class Package:
 
         # update datecreation
         ctime = time.time()
-        inst_repo.setCreationDate(idpackage, str(ctime))
+        inst_repo.setCreationDate(package_id, str(ctime))
 
         # add idpk to the installedtable
-        inst_repo.dropInstalledPackageFromStore(idpackage)
-        inst_repo.storeInstalledPackage(idpackage,
+        inst_repo.dropInstalledPackageFromStore(package_id)
+        inst_repo.storeInstalledPackage(package_id,
             self.pkgmeta['repository'], self.pkgmeta['install_source'])
 
         automerge_data = self.pkgmeta.get('configprotect_data')
         if automerge_data:
-            inst_repo.insertAutomergefiles(idpackage, automerge_data)
+            inst_repo.insertAutomergefiles(package_id, automerge_data)
 
         inst_repo.commit()
 
@@ -2607,9 +2346,9 @@ class Package:
         # in case of injected packages (SPM metadata might be
         # incomplete).
         self.pkgmeta['triggers']['install']['content'] = \
-            Package.FileContentReader(content_file)
+            Content.FileContentReader(content_file)
 
-        return idpackage
+        return package_id
 
     def __fill_image_dir(self, merge_from, image_dir):
 
@@ -2618,7 +2357,7 @@ class Package:
         # even if repositories are allowed to not have content
         # metadata, in this particular case, it is mandatory
         contents = dbconn.retrieveContentIter(
-            self.pkgmeta['idpackage'], order_by = "file")
+            self.pkgmeta['package_id'], order_by = "file")
 
         # collect files
         for path, ftype in contents:
@@ -2665,42 +2404,52 @@ class Package:
 
         del contents
 
-    def __get_package_match_config_protect(self, mask = False):
-
-        idpackage, repoid = self._package_match
-        dbconn = self._entropy.open_repository(repoid)
+    def _get_config_protect(self, entropy_repository, package_id, mask = False):
+        """
+        Return configuration protection (or mask) metadata for the given
+        package.
+        This method should not be used as source for storing metadata into
+        repositories since the returned objects may not be decoded in utf-8.
+        Data returned by this method is expected to be used only by internal
+        functions.
+        """
         cl_id = etpConst['system_settings_plugins_ids']['client_plugin']
         misc_data = self._settings[cl_id]['misc']
+
         if mask:
-            config_protect = set(dbconn.retrieveProtectMask(idpackage).split())
-            config_protect |= set(misc_data['configprotectmask'])
+            paths = entropy_repository.retrieveProtectMask(package_id).split()
+            misc_key = "configprotectmask"
         else:
-            config_protect = set(dbconn.retrieveProtect(idpackage).split())
-            config_protect |= set(misc_data['configprotect'])
-        config_protect = [etpConst['systemroot']+x for x in config_protect]
+            paths = entropy_repository.retrieveProtect(package_id).split()
+            misc_key = "configprotect"
 
-        return sorted(config_protect)
+        root = etpConst['systemroot']
+        config = set(("%s%s" % (root, path) for path in paths))
+        config.update(misc_data[misc_key])
 
-    def __get_installed_package_config_protect(self, installed_package_id,
-        mask = False):
+        # os.* methods in Python 2.x do not expect unicode strings
+        # This set of data is only used by _handle_config_protect atm.
+        if not const_is_python3():
+            config = set((const_convert_to_rawstring(x) for x in config))
 
-        inst_repo = self._entropy.installed_repository()
-        if inst_repo is None:
-            return []
+        return config
 
-        cl_id = etpConst['system_settings_plugins_ids']['client_plugin']
-        misc_data = self._settings[cl_id]['misc']
-        if mask:
-            _pmask = inst_repo.retrieveProtectMask(installed_package_id).split()
-            config_protect = set(_pmask)
-            config_protect |= set(misc_data['configprotectmask'])
-        else:
-            _protect = inst_repo.retrieveProtect(installed_package_id).split()
-            config_protect = set(_protect)
-            config_protect |= set(misc_data['configprotect'])
-        config_protect = [etpConst['systemroot']+x for x in config_protect]
+    def _get_config_protect_skip(self):
+        """
+        Return the configuration protection path set.
+        """
+        sys_set_plg_id = \
+            etpConst['system_settings_plugins_ids']['client_plugin']
+        client_settings = self._settings[sys_set_plg_id]
+        misc_settings = client_settings['misc']
 
-        return sorted(config_protect)
+        protectskip = misc_settings['configprotectskip']
+        if not const_is_python3():
+            protectskip = set((
+                const_convert_to_rawstring(
+                    x, from_enctype = etpConst['conf_encoding']) for x in
+                misc_settings['configprotectskip']))
+        return protectskip
 
     def __get_sys_root(self):
         return self.pkgmeta.get('unittest_root', '') + \
@@ -2709,8 +2458,11 @@ class Package:
     def _move_image_to_system(self, items_installed, items_not_installed):
 
         # load CONFIG_PROTECT and its mask
-        protect = self.__get_package_match_config_protect()
-        mask = self.__get_package_match_config_protect(mask = True)
+        repo = self._entropy.open_repository(self.pkgmeta['repository'])
+        protect = self._get_config_protect(repo, self.pkgmeta['package_id'])
+        mask = self._get_config_protect(repo, self.pkgmeta['package_id'],
+                                        mask = True)
+        protectskip = self._get_config_protect_skip()
 
         # support for unit testing settings
         sys_root = self.__get_sys_root()
@@ -2965,8 +2717,9 @@ class Package:
             prot_old_tofile = const_convert_to_unicode(prot_old_tofile)
 
             pre_tofile = tofile[:]
-            in_mask, protected, tofile, do_return = \
-                self._handle_config_protect(protect, mask, fromfile, tofile)
+            (in_mask, protected,
+             tofile, do_return) = self._handle_config_protect(
+                 protect, mask, protectskip, fromfile, tofile)
 
             # collect new config automerge data
             if in_mask and os.path.exists(fromfile):
@@ -3230,23 +2983,23 @@ class Package:
             return _path not in second_pass_removal
         Package._filter_content_file(content_file, _filter)
 
-    def _handle_config_protect(self, protect, mask, fromfile, tofile,
-        do_allocation_check = True, do_quiet = False):
+    def _handle_config_protect(self, protect, mask, protectskip,
+                               fromfile, tofile,
+                               do_allocation_check = True,
+                               do_quiet = False):
         """
         Handle configuration file protection. This method contains the logic
         for determining if a file should be protected from overwrite.
         """
-
         protected = False
         do_continue = False
         in_mask = False
-        encoded_protect = [const_convert_to_rawstring(x) for x in protect]
 
-        if tofile in encoded_protect:
+        if tofile in protect:
             protected = True
             in_mask = True
 
-        elif os.path.dirname(tofile) in encoded_protect:
+        elif os.path.dirname(tofile) in protect:
             protected = True
             in_mask = True
 
@@ -3254,7 +3007,7 @@ class Package:
             tofile_testdir = os.path.dirname(tofile)
             old_tofile_testdir = None
             while tofile_testdir != old_tofile_testdir:
-                if tofile_testdir in encoded_protect:
+                if tofile_testdir in protect:
                     protected = True
                     in_mask = True
                     break
@@ -3262,13 +3015,12 @@ class Package:
                 tofile_testdir = os.path.dirname(tofile_testdir)
 
         if protected: # check if perhaps, file is masked, so unprotected
-            newmask = [const_convert_to_rawstring(x) for x in mask]
 
-            if tofile in newmask:
+            if tofile in mask:
                 protected = False
                 in_mask = False
 
-            elif os.path.dirname(tofile) in newmask:
+            elif os.path.dirname(tofile) in mask:
                 protected = False
                 in_mask = False
 
@@ -3276,7 +3028,7 @@ class Package:
                 tofile_testdir = os.path.dirname(tofile)
                 old_tofile_testdir = None
                 while tofile_testdir != old_tofile_testdir:
-                    if tofile_testdir in newmask:
+                    if tofile_testdir in mask:
                         protected = False
                         in_mask = False
                         break
@@ -3327,18 +3079,8 @@ class Package:
         # file is protected  #
         ##__________________##
 
-        sys_set_plg_id = \
-            etpConst['system_settings_plugins_ids']['client_plugin']
-        client_settings = self._settings[sys_set_plg_id]
-        misc_settings = client_settings['misc']
-        encoded_protectskip = [
-            # this comes from a config file, so it's utf-8 encoded
-            const_convert_to_rawstring(
-                x, from_enctype = etpConst['conf_encoding'])
-            for x in misc_settings['configprotectskip']]
-
         # check if protection is disabled for this element
-        if tofile in encoded_protectskip:
+        if tofile in protectskip:
             self._entropy.logger.log(
                 "[Package]",
                 etpConst['logging']['normal_loglevel_id'],
@@ -3407,7 +3149,7 @@ class Package:
         avail = self._entropy.installed_repository().isFileAvailable(
             const_convert_to_unicode(todbfile), get_id = True)
 
-        if (self.pkgmeta['removeidpackage'] not in avail) and avail:
+        if (self.pkgmeta['removepackage_id'] not in avail) and avail:
             mytxt = darkred(_("Collision found during install for"))
             mytxt += " %s - %s" % (
                 blue(tofile),
@@ -3493,7 +3235,7 @@ class Package:
             header = red("   ## ")
         )
 
-        rc, data_transfer, resumed = self.__fetch_file(
+        rc, data_transfer, _resumed = self.__fetch_file(
             url,
             dest_file,
             digest = None,
@@ -3557,7 +3299,7 @@ class Package:
             )
             pkg_disk_path = self.__get_fetch_disk_path(download)
             return self._download_package(
-                self.pkgmeta['idpackage'],
+                self.pkgmeta['package_id'],
                 self.pkgmeta['repository'],
                 download,
                 pkg_disk_path,
@@ -3630,7 +3372,7 @@ class Package:
             header = red("   ## ")
         )
 
-        for pkg_id, repo, fname, cksum, signatures in err_list:
+        for _pkg_id, repo, fname, cksum, _signatures in err_list:
             self._entropy.output(
                 "[%s|%s] %s" % (blue(repo), darkgreen(cksum), darkred(fname),),
                 importance = 1,
@@ -3659,7 +3401,7 @@ class Package:
         return 0
 
     def _checksum_step(self):
-        base_pkg_rc = self._match_checksum(self.pkgmeta['idpackage'],
+        base_pkg_rc = self._match_checksum(self.pkgmeta['package_id'],
             self.pkgmeta['repository'], self.pkgmeta['checksum'],
             self.pkgmeta['download'], self.pkgmeta['signatures'])
         if base_pkg_rc != 0:
@@ -3674,7 +3416,7 @@ class Package:
                 'sha512': extra_download['sha512'],
                 'gpg': extra_download['gpg'],
             }
-            extra_rc = self._match_checksum(self.pkgmeta['idpackage'],
+            extra_rc = self._match_checksum(self.pkgmeta['package_id'],
                 self.pkgmeta['repository'], checksum, download, signatures)
             if extra_rc != 0:
                 return extra_rc
@@ -3960,8 +3702,10 @@ class Package:
             level = "info",
             header = red("   ## ")
         )
-        self._remove_content_from_system(self.pkgmeta['removeidpackage'],
+
+        self._remove_content_from_system(
             automerge_metadata = self.pkgmeta['already_protected_config_files'])
+
         return 0
 
     def _post_remove_step_install(self):
@@ -3994,7 +3738,7 @@ class Package:
         others_installed = self._entropy.installed_repository().getPackageIds(
             test_atom)
 
-        # It's obvious that clientdb cannot have more than one idpackage
+        # It's obvious that clientdb cannot have more than one package_id
         # featuring the same "atom" value, but still, let's be fault-tolerant.
         spm_rc = 0
 
@@ -4126,14 +3870,12 @@ class Package:
         if 'remove_installed_vanished' in self.pkgmeta:
             self._xterm_title += ' %s' % (_("Installed package vanished"),)
             self._entropy.set_title(self._xterm_title)
-            rc = self._vanished_step()
-            return rc
+            return self._vanished_step()
 
         if 'fetch_not_available' in self.pkgmeta:
             self._xterm_title += ' %s' % (_("Fetch not available"),)
             self._entropy.set_title(self._xterm_title)
-            rc = self._fetch_not_available_step()
-            return rc
+            return self._fetch_not_available_step()
 
         def do_fetch():
             self._xterm_title += ' %s: %s' % (
@@ -4165,8 +3907,10 @@ class Package:
 
         def do_multi_checksum():
             m_checksum_len = len(self.pkgmeta['multi_checksum_list'])
-            self._xterm_title += ' %s: %s %s' % (_("Multi Verification"),
-                m_checksum_len, ngettext("package", "packages", m_checksum_len),)
+            self._xterm_title += ' %s: %s %s' % (
+                _("Multi Verification"),
+                m_checksum_len,
+                ngettext("package", "packages", m_checksum_len),)
             self._entropy.set_title(self._xterm_title)
             return self._multi_checksum_step()
 
@@ -4188,9 +3932,6 @@ class Package:
             self._entropy.set_title(self._xterm_title)
             return self._unpack_step()
 
-        def do_remove_conflicts():
-            return self._removeconflict_step()
-
         def do_install():
             self._xterm_title += ' %s: %s' % (
                 _("Installing"),
@@ -4198,9 +3939,6 @@ class Package:
             )
             self._entropy.set_title(self._xterm_title)
             return self._install_step()
-
-        def do_install_clean():
-            return self._package_install_clean()
 
         def do_install_spm():
             return self._spm_install_package(
@@ -4262,12 +4000,6 @@ class Package:
             self._entropy.set_title(self._xterm_title)
             return self._post_remove_step()
 
-        def do_postremove_install():
-            return self._post_remove_step_install()
-
-        def do_postremove_remove():
-            return self._post_remove_step_remove()
-
         def do_config():
             self._xterm_title += ' %s: %s' % (
                 _("Configuring"),
@@ -4283,18 +4015,18 @@ class Package:
             "sources_fetch": do_sources_fetch,
             "checksum": do_checksum,
             "unpack": do_unpack,
-            "remove_conflicts": do_remove_conflicts,
+            "remove_conflicts": self._removeconflict_step,
             "install": do_install,
             "install_spm": do_install_spm,
-            "install_clean": do_install_clean,
+            "install_clean": self._package_install_clean,
             "remove": do_remove,
             "cleanup": do_cleanup,
             "postinstall": do_postinstall,
             "setup": do_setup,
             "preinstall": do_preinstall,
             "postremove": do_postremove,
-            "postremove_install": do_postremove_install,
-            "postremove_remove": do_postremove_remove,
+            "postremove_install": self._post_remove_step_install,
+            "postremove_remove": self._post_remove_step_remove,
             "preremove": do_preremove,
             "config": do_config,
         }
@@ -4354,6 +4086,7 @@ class Package:
         # this is a SystemSettings.CachingList object
         splitdebug = settings['splitdebug']
         splitdebug_mask = settings['splitdebug_mask']
+        _pkg_id, pkg_repo = pkg_match
 
         def _generate_cache(lst_obj):
             # compute the package matching then
@@ -4364,7 +4097,7 @@ class Package:
                     if pkg_repo not in repo_ids:
                         # skip entry, not me
                         continue
-                dep_matches, rc = entropy_client.atom_match(
+                dep_matches, _rc = entropy_client.atom_match(
                     dep, multi_match=True, multi_repo=True)
                 pkg_matches |= dep_matches
 
@@ -4378,9 +4111,7 @@ class Package:
             enabled = True
         else:
             # whitelist support
-            pkg_id, pkg_repo = pkg_match
             pkg_matches = splitdebug.get()
-
             if pkg_matches is None:
                 pkg_matches = _generate_cache(splitdebug)
 
@@ -4390,9 +4121,7 @@ class Package:
         # if it's enabled, check whether it's blacklisted
         if enabled:
             # blacklist support
-            pkg_id, pkg_repo = pkg_match
             pkg_matches = splitdebug_mask.get()
-
             if pkg_matches is None:
                 # compute the package matching
                 pkg_matches = _generate_cache(splitdebug_mask)
@@ -4409,7 +4138,7 @@ class Package:
         """
         return Package.splitdebug_enabled(self._entropy, pkg_match)
 
-    def __get_base_metadata(self, action):
+    def __get_base_metadata(self, _action):
         def get_splitdebug_data():
             sys_set_plg_id = \
                 etpConst['system_settings_plugins_ids']['client_plugin']
@@ -4473,7 +4202,7 @@ class Package:
             tmp_fd, tmp_path = const_mkstemp(
                 prefix="PackageContentSafety",
                 dir=tmp_dir)
-            with Package.FileContentSafetyWriter(tmp_fd) as tmp_f:
+            with Content.FileContentSafetyWriter(tmp_fd) as tmp_f:
                 for path, sha256, mtime in content_safety:
                     tmp_f.write(path, sha256, mtime)
 
@@ -4519,7 +4248,7 @@ class Package:
             tmp_fd, tmp_path = const_mkstemp(
                 prefix="PackageContent",
                 dir=tmp_dir)
-            with Package.FileContentWriter(tmp_fd) as tmp_f:
+            with Content.FileContentWriter(tmp_fd) as tmp_f:
                 for path, ftype in content:
                     if filter_splitdebug and not splitdebug:
                         # if filter_splitdebug is enabled, this
@@ -4561,15 +4290,15 @@ class Package:
         m = sorted_content length.
         """
         tmp_content_file = content_file + \
-            Package.FileContentWriter.TMP_SUFFIX
+            Content.FileContentWriter.TMP_SUFFIX
 
         sorted_ptr = 0
         _sorted_path = None
         _sorted_ftype = None
         _package_id = 0 # will be filled
         try:
-            with Package.FileContentWriter(tmp_content_file) as tmp_w:
-                with Package.FileContentReader(content_file) as tmp_r:
+            with Content.FileContentWriter(tmp_content_file) as tmp_w:
+                with Content.FileContentReader(content_file) as tmp_r:
                     for _package_id, _path, _ftype in tmp_r:
 
                         while True:
@@ -4621,10 +4350,10 @@ class Package:
         a filter to the path elements.
         """
         tmp_content_file = content_file + \
-            Package.FileContentWriter.TMP_SUFFIX
+            Content.FileContentWriter.TMP_SUFFIX
         try:
-            with Package.FileContentWriter(tmp_content_file) as tmp_w:
-                with Package.FileContentReader(content_file) as tmp_r:
+            with Content.FileContentWriter(tmp_content_file) as tmp_w:
+                with Content.FileContentReader(content_file) as tmp_r:
                     for _package_id, _path, _ftype in tmp_r:
                         if filter_func(_path):
                             tmp_w.write(_package_id, _path, _ftype)
@@ -4666,23 +4395,23 @@ class Package:
 
     def __generate_remove_metadata(self):
 
-        idpackage = self._package_match[0]
+        package_id = self._package_match[0]
         inst_repo = self._entropy.installed_repository()
 
-        if not inst_repo.isPackageIdAvailable(idpackage):
+        if not inst_repo.isPackageIdAvailable(package_id):
             self.pkgmeta['remove_installed_vanished'] = True
             return 0
 
-        self.pkgmeta['idpackage'] = idpackage
-        self.pkgmeta['removeidpackage'] = idpackage
+        self.pkgmeta['package_id'] = package_id
+        self.pkgmeta['removepackage_id'] = package_id
         self.pkgmeta['configprotect_data'] = []
         self.pkgmeta['triggers'] = {}
         self.pkgmeta['removeatom'] = \
-            inst_repo.retrieveAtom(idpackage)
+            inst_repo.retrieveAtom(package_id)
         self.pkgmeta['slot'] = \
-            inst_repo.retrieveSlot(idpackage)
+            inst_repo.retrieveSlot(package_id)
         self.pkgmeta['versiontag'] = \
-            inst_repo.retrieveTag(idpackage)
+            inst_repo.retrieveTag(package_id)
 
         remove_config = False
         if 'removeconfig' in self.metaopts:
@@ -4690,7 +4419,7 @@ class Package:
         self.pkgmeta['removeconfig'] = remove_config
 
         content = inst_repo.retrieveContentIter(
-            idpackage, order_by="file", reverse=True)
+            package_id, order_by="file", reverse=True)
         self.pkgmeta['removecontent_file'] = \
             self.__generate_content_file(content)
         # collects directories whose content has been modified
@@ -4698,8 +4427,12 @@ class Package:
         self.pkgmeta['affected_directories'] = set()
         self.pkgmeta['affected_infofiles'] = set()
 
+        # this will be set before calling removePackage() if we have
+        # a package to remove
+        self.pkgmeta['config_protect+mask'] = None
+
         self.pkgmeta['triggers']['remove'] = \
-            inst_repo.getTriggerData(idpackage)
+            inst_repo.getTriggerData(package_id)
         if self.pkgmeta['triggers']['remove'] is None:
             self.pkgmeta['remove_installed_vanished'] = True
             return 0
@@ -4710,12 +4443,12 @@ class Package:
 
         self.pkgmeta['triggers']['remove']['spm_repository'] = \
             inst_repo.retrieveSpmRepository(
-                idpackage)
+                package_id)
         self.pkgmeta['triggers']['remove'].update(
             self.__get_base_metadata(self._action))
 
         pkg_license = inst_repo.retrieveLicense(
-            idpackage)
+            package_id)
         if pkg_license is None:
             pkg_license = set()
         else:
@@ -4729,19 +4462,19 @@ class Package:
         return 0
 
     def __generate_config_metadata(self):
-        idpackage = self._package_match[0]
+        package_id = self._package_match[0]
         inst_repo = self._entropy.installed_repository()
 
-        self.pkgmeta['atom'] = inst_repo.retrieveAtom(idpackage)
-        key, slot = inst_repo.retrieveKeySlot(idpackage)
+        self.pkgmeta['atom'] = inst_repo.retrieveAtom(package_id)
+        key, slot = inst_repo.retrieveKeySlot(package_id)
         self.pkgmeta['key'], self.pkgmeta['slot'] = key, slot
-        self.pkgmeta['version'] = inst_repo.retrieveVersion(idpackage)
-        self.pkgmeta['category'] = inst_repo.retrieveCategory(idpackage)
-        self.pkgmeta['name'] = inst_repo.retrieveName(idpackage)
+        self.pkgmeta['version'] = inst_repo.retrieveVersion(package_id)
+        self.pkgmeta['category'] = inst_repo.retrieveCategory(package_id)
+        self.pkgmeta['name'] = inst_repo.retrieveName(package_id)
         self.pkgmeta['spm_repository'] = inst_repo.retrieveSpmRepository(
-            idpackage)
+            package_id)
 
-        pkg_license = inst_repo.retrieveLicense(idpackage)
+        pkg_license = inst_repo.retrieveLicense(package_id)
         if pkg_license is None:
             pkg_license = set()
         else:
@@ -4762,7 +4495,7 @@ class Package:
         inst_repo = self._entropy.installed_repository()
 
         for conflict in conflicts:
-            my_m_id, my_m_rc = inst_repo.atomMatch(conflict)
+            my_m_id, _my_m_rc = inst_repo.atomMatch(conflict)
             if my_m_id != -1:
                 # check if the package shares the same slot
                 match_data = dbconn.retrieveKeySlot(m_id)
@@ -4779,23 +4512,23 @@ class Package:
     def __setup_package_to_remove(self, package_key, slot):
 
         inst_repo = self._entropy.installed_repository()
-        inst_idpackage, inst_rc = inst_repo.atomMatch(package_key,
+        inst_package_id, _inst_rc = inst_repo.atomMatch(package_key,
             matchSlot = slot)
 
-        if inst_idpackage != -1:
-            avail = inst_repo.isPackageIdAvailable(inst_idpackage)
+        if inst_package_id != -1:
+            avail = inst_repo.isPackageIdAvailable(inst_package_id)
             if avail:
-                inst_atom = inst_repo.retrieveAtom(inst_idpackage)
+                inst_atom = inst_repo.retrieveAtom(inst_package_id)
                 self.pkgmeta['removeatom'] = inst_atom
             else:
-                inst_idpackage = -1
-        return inst_idpackage
+                inst_package_id = -1
+        return inst_package_id
 
     def __generate_install_metadata(self):
 
-        idpackage, repository = self._package_match
+        package_id, repository = self._package_match
         inst_repo = self._entropy.installed_repository()
-        self.pkgmeta['idpackage'] = idpackage
+        self.pkgmeta['package_id'] = package_id
         self.pkgmeta['repository'] = repository
         cl_id = etpConst['system_settings_plugins_ids']['client_plugin']
         edelta_support = self._settings[cl_id]['misc']['edelta_support']
@@ -4828,10 +4561,10 @@ class Package:
         self.pkgmeta['configprotect_data'] = []
         dbconn = self._entropy.open_repository(repository)
         self.pkgmeta['triggers'] = {}
-        self.pkgmeta['atom'] = dbconn.retrieveAtom(idpackage)
-        self.pkgmeta['slot'] = dbconn.retrieveSlot(idpackage)
+        self.pkgmeta['atom'] = dbconn.retrieveAtom(package_id)
+        self.pkgmeta['slot'] = dbconn.retrieveSlot(package_id)
 
-        ver, tag, rev = dbconn.getVersioningData(idpackage)
+        ver, tag, rev = dbconn.getVersioningData(package_id)
         self.pkgmeta['version'] = ver
         self.pkgmeta['versiontag'] = tag
         self.pkgmeta['revision'] = rev
@@ -4840,17 +4573,17 @@ class Package:
         self.pkgmeta['splitdebug_pkgfile'] = True
         if not is_package_repo:
             self.pkgmeta['splitdebug_pkgfile'] = False
-            extra_download = dbconn.retrieveExtraDownload(idpackage)
+            extra_download = dbconn.retrieveExtraDownload(package_id)
             if not self.pkgmeta['splitdebug']:
                 extra_download = [x for x in extra_download if \
                     x['type'] != "debug"]
             self.pkgmeta['extra_download'] += extra_download
 
-        self.pkgmeta['category'] = dbconn.retrieveCategory(idpackage)
-        self.pkgmeta['download'] = dbconn.retrieveDownloadURL(idpackage)
-        self.pkgmeta['name'] = dbconn.retrieveName(idpackage)
-        self.pkgmeta['checksum'] = dbconn.retrieveDigest(idpackage)
-        sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(idpackage)
+        self.pkgmeta['category'] = dbconn.retrieveCategory(package_id)
+        self.pkgmeta['download'] = dbconn.retrieveDownloadURL(package_id)
+        self.pkgmeta['name'] = dbconn.retrieveName(package_id)
+        self.pkgmeta['checksum'] = dbconn.retrieveDigest(package_id)
+        sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(package_id)
         signatures = {
             'sha1': sha1,
             'sha256': sha256,
@@ -4861,7 +4594,7 @@ class Package:
         self.pkgmeta['conflicts'] = self.__get_match_conflicts(
             self._package_match)
 
-        description = dbconn.retrieveDescription(idpackage)
+        description = dbconn.retrieveDescription(package_id)
         if description:
             if len(description) > 74:
                 description = description[:74].strip()
@@ -4872,7 +4605,7 @@ class Package:
         # phase
         self.pkgmeta['installed_package_id'] = None
         # fill action queue
-        self.pkgmeta['removeidpackage'] = -1
+        self.pkgmeta['removepackage_id'] = -1
         remove_config = False
         if 'removeconfig' in self.metaopts:
             remove_config = self.metaopts.get('removeconfig')
@@ -4890,7 +4623,7 @@ class Package:
             self.pkgmeta['merge_from'] = const_convert_to_unicode(mf)
         self.pkgmeta['removeconfig'] = remove_config
 
-        self.pkgmeta['removeidpackage'] = self.__setup_package_to_remove(
+        self.pkgmeta['removepackage_id'] = self.__setup_package_to_remove(
             entropy.dep.dep_getkey(self.pkgmeta['atom']),
             self.pkgmeta['slot'])
 
@@ -4932,28 +4665,32 @@ class Package:
         self.pkgmeta['pkgdbpath'] = os.path.join(self.pkgmeta['unpackdir'],
             "edb/pkg.db")
 
-        if self.pkgmeta['removeidpackage'] == -1:
+        # this will be set before calling handlePackage()
+        # if we have a package to remove
+        self.pkgmeta['config_protect+mask'] = None
+
+        if self.pkgmeta['removepackage_id'] == -1:
             # nothing to remove, fresh install
             self.pkgmeta['removecontent_file'] = None
         else:
             # generate content file
             content = inst_repo.retrieveContentIter(
-                self.pkgmeta['removeidpackage'],
+                self.pkgmeta['removepackage_id'],
                 order_by="file", reverse=True)
             self.pkgmeta['removecontent_file'] = \
                 self.__generate_content_file(content)
 
             # There is a pkg to remove, but...
-            # compare both versions and if they match, disable removeidpackage
+            # compare both versions and if they match, disable removepackage_id
             trigger_data = inst_repo.getTriggerData(
-                self.pkgmeta['removeidpackage'])
+                self.pkgmeta['removepackage_id'])
 
             if trigger_data is None:
                 # installed repository entry is corrupted
-                self.pkgmeta['removeidpackage'] = -1
+                self.pkgmeta['removepackage_id'] = -1
             else:
                 self.pkgmeta['removeatom'] = inst_repo.retrieveAtom(
-                    self.pkgmeta['removeidpackage'])
+                    self.pkgmeta['removepackage_id'])
 
                 self.pkgmeta['triggers']['remove'] = trigger_data
                 # pass reference, not copy! nevva!
@@ -4963,12 +4700,12 @@ class Package:
                     self.pkgmeta['affected_infofiles']
 
                 self.pkgmeta['triggers']['remove']['spm_repository'] = \
-                    inst_repo.retrieveSpmRepository(idpackage)
+                    inst_repo.retrieveSpmRepository(package_id)
                 self.pkgmeta['triggers']['remove'].update(
                     self.__get_base_metadata(self._action))
 
                 pkg_rm_license = inst_repo.retrieveLicense(
-                    self.pkgmeta['removeidpackage'])
+                    self.pkgmeta['removepackage_id'])
                 if pkg_rm_license is None:
                     pkg_rm_license = set()
                 else:
@@ -4987,21 +4724,21 @@ class Package:
         self.pkgmeta['steps'].append("setup")
         self.pkgmeta['steps'].append("preinstall")
         self.pkgmeta['steps'].append("install")
-        if self.pkgmeta['removeidpackage'] != -1:
+        if self.pkgmeta['removepackage_id'] != -1:
             self.pkgmeta['steps'].append("preremove")
         self.pkgmeta['steps'].append("install_clean")
-        if self.pkgmeta['removeidpackage'] != -1:
+        if self.pkgmeta['removepackage_id'] != -1:
             self.pkgmeta['steps'].append("postremove")
             self.pkgmeta['steps'].append("postremove_install")
         self.pkgmeta['steps'].append("install_spm")
         self.pkgmeta['steps'].append("postinstall")
         self.pkgmeta['steps'].append("cleanup")
 
-        self.pkgmeta['triggers']['install'] = dbconn.getTriggerData(idpackage)
+        self.pkgmeta['triggers']['install'] = dbconn.getTriggerData(package_id)
         if self.pkgmeta['triggers']['install'] is None:
             # wtf!?
             return 1
-        pkg_license = dbconn.retrieveLicense(idpackage)
+        pkg_license = dbconn.retrieveLicense(package_id)
         if pkg_license is None:
             pkg_license = set()
         else:
@@ -5013,7 +4750,7 @@ class Package:
         self.pkgmeta['triggers']['install']['imagedir'] = \
             self.pkgmeta['imagedir']
         self.pkgmeta['triggers']['install']['spm_repository'] = \
-            dbconn.retrieveSpmRepository(idpackage)
+            dbconn.retrieveSpmRepository(package_id)
         self.pkgmeta['triggers']['install'].update(
             self.__get_base_metadata(self._action))
 
@@ -5023,7 +4760,7 @@ class Package:
 
     def __generate_fetch_metadata(self, sources = False):
 
-        idpackage, repository = self._package_match
+        package_id, repository = self._package_match
         dochecksum = True
 
         # fetch abort function
@@ -5050,17 +4787,17 @@ class Package:
                 self._package_match)
 
         self.pkgmeta['repository'] = repository
-        self.pkgmeta['idpackage'] = idpackage
+        self.pkgmeta['package_id'] = package_id
         dbconn = self._entropy.open_repository(repository)
-        self.pkgmeta['atom'] = dbconn.retrieveAtom(idpackage)
-        self.pkgmeta['slot'] = dbconn.retrieveSlot(idpackage)
-        self.pkgmeta['removeidpackage'] = self.__setup_package_to_remove(
+        self.pkgmeta['atom'] = dbconn.retrieveAtom(package_id)
+        self.pkgmeta['slot'] = dbconn.retrieveSlot(package_id)
+        self.pkgmeta['removepackage_id'] = self.__setup_package_to_remove(
             entropy.dep.dep_getkey(self.pkgmeta['atom']), self.pkgmeta['slot'])
 
         if sources:
             self.pkgmeta['edelta_support'] = False
             self.pkgmeta['extra_download'] = tuple()
-            self.pkgmeta['download'] = dbconn.retrieveSources(idpackage,
+            self.pkgmeta['download'] = dbconn.retrieveSources(package_id,
                 extended = True)
             # fake path, don't use
             self.pkgmeta['pkgpath'] = etpConst['entropypackagesworkdir']
@@ -5068,8 +4805,8 @@ class Package:
             cl_id = etpConst['system_settings_plugins_ids']['client_plugin']
             edelta_support = self._settings[cl_id]['misc']['edelta_support']
             self.pkgmeta['edelta_support'] = edelta_support
-            self.pkgmeta['checksum'] = dbconn.retrieveDigest(idpackage)
-            sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(idpackage)
+            self.pkgmeta['checksum'] = dbconn.retrieveDigest(package_id)
+            sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(package_id)
             signatures = {
                 'sha1': sha1,
                 'sha256': sha256,
@@ -5077,12 +4814,12 @@ class Package:
                 'gpg': gpg,
             }
             self.pkgmeta['signatures'] = signatures
-            extra_download = dbconn.retrieveExtraDownload(idpackage)
+            extra_download = dbconn.retrieveExtraDownload(package_id)
             if not splitdebug:
                 extra_download = [x for x in extra_download if \
                     x['type'] != "debug"]
             self.pkgmeta['extra_download'] = extra_download
-            self.pkgmeta['download'] = dbconn.retrieveDownloadURL(idpackage)
+            self.pkgmeta['download'] = dbconn.retrieveDownloadURL(package_id)
 
             # export main package download path to metadata
             # this is actually used by PackageKit backend in order
@@ -5148,7 +4885,7 @@ class Package:
                 return False
 
         matching_size = _check_matching_size(self.pkgmeta['download'],
-            dbconn.retrieveSize(idpackage))
+            dbconn.retrieveSize(package_id))
         if matching_size:
             for extra_download in self.pkgmeta['extra_download']:
                 matching_size = _check_matching_size(
@@ -5194,16 +4931,16 @@ class Package:
         temp_checksum_list = []
         temp_already_downloaded_count = 0
 
-        def _setup_download(download, size, idpackage, repository, digest,
+        def _setup_download(download, size, package_id, repository, digest,
                 signatures):
 
             if dochecksum:
-                obj = (idpackage, repository, download, digest,
+                obj = (package_id, repository, download, digest,
                     signatures)
                 temp_checksum_list.append(obj)
 
             if self.__check_pkg_path_download(download, None) < 0:
-                obj = (idpackage, repository, download, digest, signatures)
+                obj = (package_id, repository, download, digest, signatures)
                 temp_fetch_list.append(obj)
             else:
                 down_path = self.__get_fetch_disk_path(download)
@@ -5216,13 +4953,13 @@ class Package:
             return 0
 
 
-        for idpackage, repository in matches:
+        for package_id, repository in matches:
 
             if repository.endswith(etpConst['packagesext']):
                 continue
 
             dbconn = self._entropy.open_repository(repository)
-            myatom = dbconn.retrieveAtom(idpackage)
+            myatom = dbconn.retrieveAtom(package_id)
 
             # general purpose metadata
             self.pkgmeta['atoms'].append(myatom)
@@ -5230,10 +4967,10 @@ class Package:
                 self.pkgmeta['repository_atoms'][repository] = set()
             self.pkgmeta['repository_atoms'][repository].add(myatom)
 
-            download = dbconn.retrieveDownloadURL(idpackage)
-            digest = dbconn.retrieveDigest(idpackage)
-            sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(idpackage)
-            size = dbconn.retrieveSize(idpackage)
+            download = dbconn.retrieveDownloadURL(package_id)
+            digest = dbconn.retrieveDigest(package_id)
+            sha1, sha256, sha512, gpg = dbconn.retrieveSignatures(package_id)
+            size = dbconn.retrieveSize(package_id)
             signatures = {
                 'sha1': sha1,
                 'sha256': sha256,
@@ -5241,16 +4978,16 @@ class Package:
                 'gpg': gpg,
             }
             temp_already_downloaded_count += _setup_download(download, size,
-                idpackage, repository, digest, signatures)
+                package_id, repository, digest, signatures)
 
-            extra_downloads = dbconn.retrieveExtraDownload(idpackage)
+            extra_downloads = dbconn.retrieveExtraDownload(package_id)
 
             splitdebug = self.pkgmeta['splitdebug']
             # if splitdebug is enabled, check if it's also enabled
             # via package.splitdebug
             if splitdebug:
                 splitdebug = self._package_splitdebug_enabled(
-                    (idpackage, repository))
+                    (package_id, repository))
 
             if not splitdebug:
                 extra_downloads = [x for x in extra_downloads if \
@@ -5266,7 +5003,7 @@ class Package:
                     'gpg': extra_download['gpg'],
                 }
                 temp_already_downloaded_count += _setup_download(download,
-                    size, idpackage, repository, digest, signatures)
+                    size, package_id, repository, digest, signatures)
 
         self.pkgmeta['steps'] = []
         self.pkgmeta['multi_fetch_list'] = temp_fetch_list

@@ -241,8 +241,8 @@ class ServerPackagesRepository(CachedRepository):
         return super(ServerPackagesRepository, self)._runConfigurationFilesUpdate(
             actions, files, protect_overwrite = False)
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Reimplemented from EntropyRepository.
         """
@@ -252,24 +252,30 @@ class ServerPackagesRepository(CachedRepository):
             pkg_data['category'], pkg_data['name'], pkg_data['version'],
             pkg_data['versiontag'])
 
-        current_rev = forcedRevision
+        increase_revision = False
+        if revision is None:
+            current_rev = max(
+                pkg_data.get('revision', 0),
+                0)
+        else:
+            current_rev = revision
 
         manual_deps = set()
         # Remove entries in the same scope.
         for package_id in self.getPackageIds(pkgatom):
 
-            if forcedRevision == -1:
-                myrev = self.retrieveRevision(package_id)
-                if myrev > current_rev:
-                    current_rev = myrev
+            if revision is None:
+                pkg_revision = self.retrieveRevision(package_id)
+                if pkg_revision >= current_rev:
+                    current_rev = pkg_revision
+                    increase_revision = True
 
-            #
             manual_deps |= self.retrieveManualDependencies(package_id,
                 resolve_conditional_deps = False)
             # injected packages wouldn't be removed by addPackage
             self.removePackage(package_id)
 
-        if forcedRevision == -1:
+        if increase_revision:
             current_rev += 1
 
         # manual dependencies handling
@@ -631,11 +637,13 @@ class ServerPackagesRepositoryUpdater(object):
             critical.append(data['compressed_database_path'])
             gpg_signed_files.append(data['compressed_database_path'])
 
-            data['compressed_database_path_light'] = os.path.join(
-                self._entropy._get_local_repository_dir(self._repository_id),
-                etpConst[cmethod[7]])
-            critical.append(data['compressed_database_path_light'])
-            gpg_signed_files.append(data['compressed_database_path_light'])
+            if not download:
+                data['compressed_database_path_light'] = os.path.join(
+                    self._entropy._get_local_repository_dir(
+                        self._repository_id),
+                    etpConst[cmethod[7]])
+                critical.append(data['compressed_database_path_light'])
+                gpg_signed_files.append(data['compressed_database_path_light'])
 
             data['database_path_digest'] = os.path.join(
                 self._entropy._get_local_repository_dir(self._repository_id),
@@ -651,13 +659,15 @@ class ServerPackagesRepositoryUpdater(object):
             critical.append(data['compressed_database_path_digest'])
             gpg_signed_files.append(data['compressed_database_path_digest'])
 
-            data['compressed_database_path_digest_light'] = os.path.join(
-                self._entropy._get_local_repository_dir(self._repository_id),
-                etpConst[cmethod[8]]
-            )
-            critical.append(data['compressed_database_path_digest_light'])
-            gpg_signed_files.append(
-                data['compressed_database_path_digest_light'])
+            if not download:
+                data['compressed_database_path_digest_light'] = os.path.join(
+                    self._entropy._get_local_repository_dir(
+                        self._repository_id),
+                    etpConst[cmethod[8]]
+                    )
+                critical.append(data['compressed_database_path_digest_light'])
+                gpg_signed_files.append(
+                    data['compressed_database_path_digest_light'])
 
         # Some information regarding how packages are built
         spm_files_map = self._entropy.Spm_class().config_files_map()

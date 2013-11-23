@@ -134,8 +134,8 @@ class InstalledPackagesRepository(CachedRepository):
             const_setup_file(self._db, etpConst['entropygid'], 0o644,
                 uid = etpConst['uid'])
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Reimplemented from EntropyRepository.
         """
@@ -145,7 +145,7 @@ class InstalledPackagesRepository(CachedRepository):
         )
         for r_package_id in removelist:
             self.removePackage(r_package_id)
-        return self.addPackage(pkg_data, revision = forcedRevision,
+        return self.addPackage(pkg_data, revision = revision,
             formatted_content = formattedContent)
 
 
@@ -1606,12 +1606,12 @@ class AvailablePackagesRepositoryUpdater(object):
             return False
 
         try:
-            myidpackages = mydbconn.listAllPackageIds()
+            mypackage_ids = mydbconn.listAllPackageIds()
         except (DatabaseError, IntegrityError, OperationalError,):
             return False
 
         added_ids, removed_ids = self.__get_webserv_database_differences(
-            webserv, myidpackages)
+            webserv, mypackage_ids)
         if (None in (added_ids, removed_ids)) or \
             (not added_ids and not removed_ids and self.__force):
             # nothing to sync, it seems, if force is True, fallback to EAPI2
@@ -1809,9 +1809,9 @@ class AvailablePackagesRepositoryUpdater(object):
             return None
 
         # now that we have all stored, add
-        for idpackage in added_ids:
+        for package_id in added_ids:
             mydata = self._cacher.pop("%s%s" % (self.WEBSERV_CACHE_ID,
-                idpackage,))
+                package_id,))
             if mydata is None:
                 mytxt = "%s: %s" % (
                     blue(_("Fetch error on segment while adding")),
@@ -1833,7 +1833,7 @@ class AvailablePackagesRepositoryUpdater(object):
             try:
                 mydbconn.addPackage(
                     mydata, revision = mydata['revision'],
-                    package_id = idpackage,
+                    package_id = package_id,
                     formatted_content = True
                 )
             except (Error,) as err:
@@ -1850,8 +1850,8 @@ class AvailablePackagesRepositoryUpdater(object):
         # now remove
         # preload atoms names to improve speed during removePackage
         atoms_map = dict((x, mydbconn.retrieveAtom(x),) for x in removed_ids)
-        for idpackage in removed_ids:
-            myatom = atoms_map.get(idpackage)
+        for package_id in removed_ids:
+            myatom = atoms_map.get(package_id)
 
             mytxt = "%s %s" % (
                 darkred("--"),
@@ -1860,7 +1860,7 @@ class AvailablePackagesRepositoryUpdater(object):
                 mytxt, importance = 0, level = "info",
                 header = "  ")
             try:
-                mydbconn.removePackage(idpackage)
+                mydbconn.removePackage(package_id)
             except (Error,):
                 self._entropy.output(
                     blue(_("repository error while removing packages")),
@@ -2712,8 +2712,8 @@ class AvailablePackagesRepository(CachedRepository, MaskableRepository):
         return AvailablePackagesRepositoryUpdater(TextInterface(),
             repository_id, False, False).remote_revision()
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Reimplemented from EntropyRepository
         """
@@ -2752,8 +2752,8 @@ class GenericRepository(CachedRepository, MaskableRepository):
     in fail-safe mode.
     """
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Reimplemented from EntropyRepository.
         It is supposed that a generic repository should not support
@@ -2766,8 +2766,8 @@ class GenericRepository(CachedRepository, MaskableRepository):
             raise PermissionDenied(
                 "cannot execute handlePackage on this repository")
 
-        return self.addPackage(pkg_data, revision = forcedRevision,
-            formatted_content = formattedContent)
+        return self.addPackage(pkg_data, revision = revision,
+                               formatted_content = formattedContent)
 
     def maskFilter(self, package_id, live = True):
         """

@@ -1,3 +1,300 @@
+commit efeefa1d7ce7481e004323170bc29162dc89ea74
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 21 13:05:33 2013 +0100
+
+    Release Entropy 234
+
+commit 24ff697eae45e563d3bf12e19eb769ab6f7b7055
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 21 13:05:16 2013 +0100
+
+    [todo] update TODO
+
+commit 161dbed43d76fb4bc4df30318c8de6e9e5f63569
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 21 13:00:11 2013 +0100
+
+    [todo] update TODO
+
+commit 14f4b7b8c5a2b17cc7b29e0913e82e07cb326f09
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 21 12:39:05 2013 +0100
+
+    [entropy.spm] PortagePlugin: drop the old license setup code, fix portage >=2.2.0_alpha189 support
+    
+    The old license setup code is no longer needed since 2009. EAPI < 3
+    use ACCEPT_PROPERTIES="* -interactive", which is now set in the environment
+    (note that we may want to reduce the scope of the variable to portage.config
+    in the future). EAPI >= 3 use ACCEPT_LICENSE. check_license() in
+    eutils.eclass is gone as well.
+
+commit 973dbc62e764ae7a1ec8bec18ac173871c2682a8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 17:22:35 2013 +0100
+
+    [todo] update TODO
+
+commit 96ef5868f4b09bc7a4c6a12219d47a91e2788639
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 17:09:48 2013 +0100
+
+    [entropy.db] initial repository database support for preserved libraries
+
+commit 3c7fc6f4d09343c6ab2bb1cdcca2c7e421dee0aa
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 12:34:41 2013 +0100
+
+    Tagging Entropy version 233
+
+commit 66f146348849b89989563251e7642e0be5ce26ad
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 12:34:41 2013 +0100
+
+    Release Entropy 233
+
+commit d089978b7439180bf8e4155a5b6744eb8f8f166e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 11:42:51 2013 +0100
+
+    Revert "[entropy.db.cache] add timed expiration support for cached elements"
+    
+    This reverts commit 8b7c48c2d99822d154bb0cca90f41683551691ca.
+
+commit d786c403c8a9c912c7b013de57c95f5d511ac96b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 11:38:53 2013 +0100
+
+    [entropy.db.sqlite] fix the retrieveDependencies cache invalidation paths
+
+commit 8b7c48c2d99822d154bb0cca90f41683551691ca
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 11:25:02 2013 +0100
+
+    [entropy.db.cache] add timed expiration support for cached elements
+
+commit 47657d62854964a8f8f8c3b0877844d2a31abc7b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 20 11:15:53 2013 +0100
+
+    [entropy.misc] ParallelTask: code style update
+
+commit 465f086148be012e1fe729b01a40997e6df7a054
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 22:10:36 2013 +0100
+
+    Tagging Entropy version 232
+
+commit 8124d071d671852a327769bcc61ad495ebdc836a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 22:10:36 2013 +0100
+
+    Release Entropy 232
+
+commit 275f4d4c7491a603ace4bed19024b0a4706814df
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 22:08:34 2013 +0100
+
+    [entropy.server] validate missing dependency string using searchPackageIdFromDependencyId()
+
+commit 650a4626320d9b06c43d5332a7068c4a507348df
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 21:46:27 2013 +0100
+
+    [€ntropy.client] s/idpackage/package_id/
+
+commit 8ce1f920e06e15c7b2f625314d8e0adffded622c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 21:38:24 2013 +0100
+
+    [entropy.server] s/idpackage/package_id
+
+commit 17d1a89ee440f717e5c9921dff10846622725127
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 21:21:12 2013 +0100
+
+    Tagging Entropy version 231
+
+commit 435b75effa7bba772f8df4a8937c9a10704d387c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 21:21:12 2013 +0100
+
+    Release Entropy 231
+
+commit 421b65ab3a6d9e73ca8afe26bdece174aa8f3d0f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 21:19:27 2013 +0100
+
+    [eit.commands.commit] use map() instead of filter() in installed packages scan
+
+commit b36119bd55371dc04812df3431aa16aa5c313d58
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 18:33:51 2013 +0100
+
+    [eit.commands.commit] start counting from 1
+
+commit b1d0c40153d11346c3901d851c19c47b100d80b1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 16:55:19 2013 +0100
+
+    [entropy.server.interfaces.db] do not pull packages.db.light.bz2
+    
+    There is no need to download this particular file because it will
+    be re-created from scratch by push.
+
+commit 0a1c08b1e87bf0cf7b0dbf1d63179032d02a1f95
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 14:51:10 2013 +0100
+
+    [entropy.server] simplify _deps_tester(), improve speed
+
+commit 7eb0687ba9e695a9f9d23dead8f7e69faa53b560
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 14:48:20 2013 +0100
+
+    [entropy.db] make listAllDependencies() public
+
+commit 1834dbe55d30af6a4c98267d086498333eb07581
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 13:31:01 2013 +0100
+
+    [entropy.db.sqlite] retrieveDependencies: final performance tweaks
+
+commit 66c01f339b6e73618d7f12adff44c4baf067adbc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 13:20:12 2013 +0100
+
+    [entropy.db.sqlite] simplify retrieveDependencies() code
+
+commit a8d2ae3313bb4971f46149aa2adcaae72ad22632
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 13:06:36 2013 +0100
+
+    [entropy.db.sqlite] add in-RAM cache support for retrieveDependencies()
+    
+    This seems to give 15% speed boost in certain scenarios
+
+commit 8e600c39eaefecf03ecef590ca1ac22f123be104
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 12:03:26 2013 +0100
+
+    [entropy.client] code style updates to dependencies_test()
+
+commit 016573701c7859de7906702666b9e7ceb4217bcd
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Nov 19 11:18:05 2013 +0100
+
+    [entropy.db.sql] fix retrieveDependencies() usage of resolve_conditional_deps
+
+commit 3e4e81fe8a7f8e6dc976e209962245aaef1c1b42
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 15:34:02 2013 +0100
+
+    Tagging Entropy version 230
+
+commit 1c6fd477764b69c95f359bfd2ab362575d6e0add
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 15:34:01 2013 +0100
+
+    Release Entropy 230
+
+commit 8d6002edaf30eda7c11bbbabe14adbd920b454d9
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 15:29:03 2013 +0100
+
+    [eit.commands.commit] commit data only when something changed
+
+commit 9e2a324e83cdab0cd59a025ed3d4f255567f0326
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 15:10:17 2013 +0100
+
+    [entropy.server.db] use revision from package data if none is forced
+    
+    this avoids the generation of packages with lesser revisions during
+    package moves from a repo to another.
+    If we inherit the revision number, we should try to keep it as long
+    as there are no packages with greater revision number in the target
+    repository.
+
+commit 08e4b487bfe1d5d04b197007e334129e3a47e72c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 15:08:15 2013 +0100
+
+    [entropy.db] API change, handlePackage(forcedRevision -> revision)
+
+commit 704e5c8765d757c4a8d3c564f157159d5e512218
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 12:28:08 2013 +0100
+
+    [eit.commands.commit] refactor _commit(), divide the function into multiple sub-functions
+
+commit 715251d062756a274116ed2102a7e61fa4ab019f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 11:30:18 2013 +0100
+
+    [eit.commands.commit] start splitting _commit() method
+
+commit 85d56085625ebf002f672d442e903c974124c9fb
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 11:06:48 2013 +0100
+
+    [eit.commands.commit] make "eit repack" not fall back to packages scanning
+
+commit b70d9c2f2920a469e56d6c1d8323fbf05288a623
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 10:59:16 2013 +0100
+
+    [eit.commands.commit] make "eit repack" smarter and more reliable
+
+commit 384db92b1738ae1041b17dcea47e056ac29f6495
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Nov 18 10:44:21 2013 +0100
+
+    [eit.commands.commit] improve output function usage
+
+commit f0db93e10c987fdf3c0c1c1618aaa0472bb0086e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 17 18:39:52 2013 +0100
+
+    Tagging Entropy version 229
+
+commit 7f6def42e7132894ec1b9079255cffb272899ced
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 17 18:39:52 2013 +0100
+
+    Release Entropy 229
+
+commit e164b4b57794e53bd4f52367c1d41d92c53e5834
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 17 18:38:49 2013 +0100
+
+    [matter] fix portdb.xmatch() when package is keyword masked
+    
+    This commit fixes the use of backupenv.
+
+commit 7c21ee500d7af49c28447d29e2792dd9a9a43ed5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Nov 17 18:38:25 2013 +0100
+
+    [matter] do not create a new settings object, but keep reusing the same one
+
+commit 1f0750a183412f1647cbfe109fa5e201d2fae15f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 15 12:39:49 2013 +0100
+
+    [entropy.server] add another QA test, guard against revision downgrades
+
+commit 3431755aaf201735d6153a49f4b34de508b12bf4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 15:36:32 2013 +0100
+
+    [RigoDaemon] do not trigger kernel-switcher if kernel is already installed
+
+commit c689434298ef6783a3cde0f65e899086485153f0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Nov 13 13:23:53 2013 +0100
+
+    Tagging Entropy version 228
+
 commit e5226d2d762c1bc03375d995e3ff57b74c729286
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Wed Nov 13 13:23:52 2013 +0100

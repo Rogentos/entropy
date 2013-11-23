@@ -10,6 +10,7 @@
     the repository interface.
 
 """
+import collections
 import os
 import hashlib
 import time
@@ -129,7 +130,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
 
     # bump this every time schema changes and databaseStructureUpdate
     # should be triggered
-    _SCHEMA_REVISION = 3
+    _SCHEMA_REVISION = 4
 
     _INSERT_OR_REPLACE = "INSERT OR REPLACE"
     _INSERT_OR_IGNORE = "INSERT OR IGNORE"
@@ -518,7 +519,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         self._clearLiveCache("_doesColumnInTableExist")
         super(EntropySQLiteRepository, self).initializeRepository()
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
+    def handlePackage(self, pkg_data, revision = None,
         formattedContent = False):
         """
         Reimplemented from EntropySQLRepository.
@@ -568,6 +569,14 @@ class EntropySQLiteRepository(EntropySQLRepository):
                 self._cursor().execute("""
                 DELETE FROM packagedownloads WHERE idpackage = (?)""",
                 (package_id,))
+
+    def _addDependency(self, dependency):
+        """
+        Reimplemented from EntropySQLRepository.
+        """
+        self._clearLiveCache("retrieveDependencies")
+        return super(EntropySQLiteRepository, self)._addDependency(
+            dependency)
 
     def _addCategory(self, category):
         """
@@ -625,6 +634,15 @@ class EntropySQLiteRepository(EntropySQLRepository):
         self._clearLiveCache("retrieveKeySlotAggregated")
         self._clearLiveCache("getStrictData")
 
+    def setDependency(self, iddependency, dependency):
+        """
+        Reimplemented from EntropySQLRepository.
+        We must handle live cache.
+        """
+        super(EntropySQLiteRepository, self).setDependency(
+            iddependency, dependency)
+        self._clearLiveCache("retrieveDependencies")
+
     def setAtom(self, package_id, atom):
         """
         Reimplemented from EntropySQLRepository.
@@ -660,6 +678,24 @@ class EntropySQLiteRepository(EntropySQLRepository):
         self._clearLiveCache("getVersioningData")
         self._clearLiveCache("getStrictScopeData")
         self._clearLiveCache("getStrictData")
+
+    def removeDependencies(self, package_id):
+        """
+        Reimplemented from EntropySQLRepository.
+        We must handle live cache.
+        """
+        super(EntropySQLiteRepository, self).removeDependencies(
+            package_id)
+        self._clearLiveCache("retrieveDependencies")
+
+    def insertDependencies(self, package_id, depdata):
+        """
+        Reimplemented from EntropySQLRepository.
+        We must handle live cache.
+        """
+        super(EntropySQLiteRepository, self).insertDependencies(
+            package_id, depdata)
+        self._clearLiveCache("retrieveDependencies")
 
     def _insertUseflags(self, package_id, useflags):
         """
@@ -719,6 +755,14 @@ class EntropySQLiteRepository(EntropySQLRepository):
             FROM baseinfo, categories
             WHERE baseinfo.idcategory = categories.idcategory)
         """)
+
+    def _cleanupDependencies(self):
+        """
+        Reimplemented from EntropySQLRepository.
+        We must handle live cache.
+        """
+        super(EntropySQLiteRepository, self)._cleanupDependencies()
+        self._clearLiveCache("retrieveDependencies")
 
     def getVersioningData(self, package_id):
         """
@@ -1083,6 +1127,51 @@ class EntropySQLiteRepository(EntropySQLRepository):
         obj = frozenset(cached.get(package_id, frozenset()))
         del cached
         return obj
+
+    def retrieveDependencies(self, package_id, extended = False,
+        deptype = None, exclude_deptypes = None,
+        resolve_conditional_deps = True):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        We must use the in-memory cache to do some memoization.
+        """
+        cached = self._getLiveCache("retrieveDependencies")
+        if cached is None:
+            cur = self._cursor().execute("""
+            SELECT dependencies.idpackage,
+                   dependenciesreference.dependency,
+                   dependencies.type
+            FROM dependencies, dependenciesreference
+            WHERE dependencies.iddependency = dependenciesreference.iddependency
+            """)
+
+            cached = {}
+            for pkg_id, dependency, dependency_type in cur:
+                obj = cached.setdefault(pkg_id, collections.deque())
+                obj.append((dependency, dependency_type))
+            self._setLiveCache("retrieveDependencies", cached)
+
+        data = cached.get(package_id, collections.deque())
+        if deptype is not None:
+            data = iter([x for x in data if x[1] == deptype])
+        elif exclude_deptypes is not None:
+            excl_set = frozenset(exclude_deptypes)
+            data = iter([x for x in data if x[1] not in excl_set])
+
+        iter_obj = tuple
+        if extended:
+            data = iter(data)
+        else:
+            iter_obj = frozenset
+            data = iter((x for x, _x in data))
+
+        # avoid python3.x memleak
+        del cached
+
+        if resolve_conditional_deps:
+            return iter_obj(entropy.dep.expand_dependencies(
+                    data, [self]))
+        return iter_obj(data)
 
     def retrieveDesktopMime(self, package_id):
         """
@@ -1612,6 +1701,10 @@ class EntropySQLiteRepository(EntropySQLRepository):
         # added on Aug. 2011
         if not self._doesTableExist("packagedownloads"):
             self._createPackageDownloadsTable()
+
+        # added on Nov. 2013
+        if not self._doesTableExist("preserved_libs"):
+            self._createPreservedLibsTable()
 
         # added on Sept. 2010, keep forever? ;-)
         self._migrateBaseinfoExtrainfo()
@@ -2326,6 +2419,18 @@ class EntropySQLiteRepository(EntropySQLRepository):
                 level = "warning"
             )
             do_create()
+
+    def _createPreservedLibsTable(self):
+        self._cursor().executescript("""
+            CREATE TABLE preserved_libs (
+                library VARCHAR,
+                elfclass INTEGER,
+                path VARCHAR,
+                PRIMARY KEY (library, path, elfclass)
+            );
+        """)
+        self._clearLiveCache("_doesTableExist")
+        self._clearLiveCache("_doesColumnInTableExist")
 
     def _createPackageDownloadsTable(self):
         self._cursor().executescript("""

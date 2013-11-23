@@ -668,8 +668,8 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
 
         return new_actions
 
-    def handlePackage(self, pkg_data, forcedRevision = -1,
-        formattedContent = False):
+    def handlePackage(self, pkg_data, revision = None,
+                      formattedContent = False):
         """
         Update or add a package to repository automatically handling
         its scope and thus removal of previous versions if requested by
@@ -725,8 +725,8 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
 
         @param pkg_data: Entropy package metadata dict
         @type pkg_data: dict
-        @keyword forcedRevision: force a specific package revision
-        @type forcedRevision: int
+        @keyword revision: force a specific package revision
+        @type revision: int
         @keyword formattedContent: tells whether content metadata is already
             formatted for insertion
         @type formattedContent: bool
@@ -1072,6 +1072,50 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
         @param automerge_data: list of tuples of length 2.
             [('/path/to/conf/file', 'md5_checksum_string',) ... ]
         @type automerge_data: list
+        """
+        raise NotImplementedError()
+
+    def insertPreservedLibrary(self, library, elfclass, path):
+        """
+        Mark a library as preserved.
+
+        @param library: the library name (SONAME)
+        @type library: string
+        @param elfclass: the ELF class of the library
+        @type elfclass: int
+        @param path: the path where the library is currently stored
+        """
+        raise NotImplementedError()
+
+    def removePreservedLibrary(self, library, elfclass, path):
+        """
+        Remove a previously library marked as preserved.
+
+        @param library: the library name (SONAME)
+        @type library: string
+        @param elfclass: the ELF class of the library
+        @type elfclass: int
+        @param path: the path where the library is currently stored
+        """
+        raise NotImplementedError()
+
+    def listAllPreservedLibraries(self):
+        """
+        Return a list of all the recorded preserved libraries.
+
+        @return: a list (tuple) of tuples composed by (library, elfclass, path).
+        @rtype: tuple
+        """
+        raise NotImplementedError()
+
+    def retrievePreservedLibraries(self, library, elfclass):
+        """
+        Return a list of paths associated with the given preserved library,
+        if any.
+
+        @return: the list (tuple) of paths associated with a SONAME
+            and its ELF class.
+        @rtype: frozenset
         """
         raise NotImplementedError()
 
@@ -3999,6 +4043,16 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
 
         @return: frozenset of package identifiers
         @rtype: frozenset
+        """
+        raise NotImplementedError()
+
+    def listAllDependencies(self):
+        """
+        List all dependencies available in repository.
+
+        @return: list of tuples of length 2 containing
+            (dependency id, dependency,)
+        @rtype: list
         """
         raise NotImplementedError()
 

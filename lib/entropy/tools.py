@@ -246,9 +246,6 @@ def print_exception(silent = False, tb_data = None, all_frame_data = False):
 
     return data
 
-# Get the content of an online page
-# @returns content: if the file exists
-# @returns False: if the file is not found
 def get_remote_data(url, timeout = 5):
     """
     Fetch data at given URL (all the ones supported by Python urllib) and
@@ -2636,8 +2633,6 @@ def resolve_dynamic_library(library, requiring_executable):
 
     return found_path
 
-readelf_avail_check = False
-ldd_avail_check = False
 def read_elf_dynamic_libraries(elf_file):
     """
     Extract NEEDED metadatum from ELF file at path.
@@ -2647,14 +2642,36 @@ def read_elf_dynamic_libraries(elf_file):
     @return: list (set) of strings in NEEDED metadatum
     @rtype: set
     """
-    global readelf_avail_check
-    if not readelf_avail_check:
-        if not const_file_readable("/usr/bin/readelf"):
-            FileNotFound('FileNotFound: no readelf')
-        readelf_avail_check = True
-    return set([x.strip().split()[-1][1:-1] for x in \
-        getstatusoutput('/usr/bin/readelf -d %s' % (elf_file,))[1].split("\n") \
-            if (x.find("(NEEDED)") != -1)])
+    proc = None
+    args = ("/usr/bin/scanelf", "-qF", "%n", elf_file)
+
+    out = None
+    try:
+        proc = subprocess.Popen(args, stdout = subprocess.PIPE)
+        exit_st = proc.wait()
+        if exit_st != 0:
+            raise FileNotFound("scanelf failure")
+        out = proc.stdout.read()
+
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
+        raise FileNotFound("/usr/bin/scanelf not found")
+
+    finally:
+        if proc is not None:
+            try:
+                proc.stdout.close()
+            except (OSError, IOError):
+                pass
+
+    outcome = set()
+    if out is not None:
+        for line in out.split("\n"):
+            if line:
+                libs = line.strip().split(" ", -1)[0].split(",")
+                outcome.update(libs)
+    return outcome
 
 def read_elf_real_dynamic_libraries(elf_file):
     """
@@ -2672,17 +2689,37 @@ def read_elf_real_dynamic_libraries(elf_file):
     @rtype: set
     @raise FileNotFound: if ldd is not found
     """
-    global ldd_avail_check
-    if not ldd_avail_check:
-        if not const_file_readable("/usr/bin/ldd"):
-            FileNotFound('FileNotFound: no ldd')
-    sts, output = getstatusoutput('/usr/bin/ldd "%s"' % (elf_file,))
-    if sts != 0:
-        # garbage file
-        # non-dynamic executables cause this
-        return []
-    return set((x.split()[0].strip() for x in output.split("\n") if "=>" in x \
-        and not x.split()[-1].startswith("(")))
+    # use the real path, so that it can be dropped from the resulting set
+    elf_file = os.path.realpath(elf_file)
+
+    proc = None
+    out = None
+    args = ("/usr/bin/lddtree", "-l", elf_file)
+
+    try:
+        proc = subprocess.Popen(args, stdout = subprocess.PIPE)
+        exit_st = proc.wait()
+        if exit_st != 0:
+            raise FileNotFound("lddtree returned error")
+        out = proc.stdout.read()
+
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
+        raise FileNotFound("/usr/bin/lddtree not found")
+
+    finally:
+        if proc is not None:
+            proc.stdout.close()
+
+    outcome = set()
+    if out is not None:
+        for line in out.split("\n"):
+            if line:
+                outcome.add(os.path.basename(line))
+    outcome.discard(elf_file)
+
+    return outcome
 
 def read_elf_broken_symbols(elf_file):
     """
@@ -2693,14 +2730,45 @@ def read_elf_broken_symbols(elf_file):
     @return: list of broken symbols in ELF file.
     @rtype: set
     """
-    global ldd_avail_check
-    if not ldd_avail_check:
-        if not const_file_readable("/usr/bin/ldd"):
-            FileNotFound('FileNotFound: no ldd')
-        ldd_avail_check = True
-    return set([x.strip().split("\t")[0].split()[-1] for x in \
-        getstatusoutput('/usr/bin/ldd -r "%s"' % (elf_file,))[1].split("\n") \
-            if (x.find("undefined symbol:") != -1)])
+    proc = None
+    args = ("/usr/bin/ldd", "-r", elf_file)
+    out = None
+
+    try:
+        proc = subprocess.Popen(
+            args, stdout = subprocess.PIPE,
+            stderr = subprocess.PIPE)
+        exit_st = proc.wait()
+        if exit_st != 0:
+            raise FileNotFound("ldd error")
+
+        out = ""
+        while True:
+            # make sure that stdout is flushed and won't block
+            proc.stdout.read()
+            tout = proc.stderr.read()
+            out += tout
+            if not tout:
+                break
+
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
+        raise FileNotFound("/usr/bin/ldd not found")
+
+    finally:
+        if proc is not None:
+            proc.stderr.close()
+            proc.stdout.close()
+
+    outcome = set()
+    if out is not None:
+        for line in out.split("\n"):
+            if line.startswith("undefined symbol: "):
+                symbol = line.split("\t")[0].split()[-1]
+                outcome.add(symbol)
+
+    return outcome
 
 def read_elf_linker_paths(elf_file):
     """
@@ -2711,21 +2779,40 @@ def read_elf_linker_paths(elf_file):
     @return: list of extracted built-in linker paths.
     @rtype: list
     """
-    global readelf_avail_check
-    if not readelf_avail_check:
-        if not const_file_readable("/usr/bin/readelf"):
-            FileNotFound('FileNotFound: no readelf')
-        readelf_avail_check = True
-    data = [x.strip().split()[-1][1:-1].split(":") for x in \
-        getstatusoutput('readelf -d %s' % (elf_file,))[1].split("\n") if not \
-            ((x.find("(RPATH)") == -1) and (x.find("(RUNPATH)") == -1))]
-    mypaths = []
-    for mypath in data:
-        for xpath in mypath:
-            xpath = xpath.replace("$ORIGIN", os.path.dirname(elf_file))
-            xpath = xpath.replace("${ORIGIN}", os.path.dirname(elf_file))
-            mypaths.append(xpath)
-    return mypaths
+    proc = None
+    args = ("/usr/bin/scanelf", "-qF", "%r", elf_file)
+    out = None
+
+    try:
+        proc = subprocess.Popen(args, stdout = subprocess.PIPE)
+        exit_st = proc.wait()
+        if exit_st != 0:
+            raise FileNotFound("scanelf error")
+
+        out = proc.stdout.read()
+
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
+        raise FileNotFound("/usr/bin/scanelf not found")
+
+    finally:
+        if proc is not None:
+            proc.stdout.close()
+
+    outcome = []
+    if out is not None:
+
+        elf_dir = os.path.dirname(elf_file)
+        for line in out.split("\n"):
+            if line:
+                paths = line.strip().split(" ", -1)[0].split(",")
+                for path in paths:
+                    path = path.replace("$ORIGIN", elf_dir)
+                    path = path.replace("${ORIGIN}", elf_dir)
+                    outcome.append(path)
+
+    return outcome
 
 def xml_from_dict_extended(dictionary):
     """
