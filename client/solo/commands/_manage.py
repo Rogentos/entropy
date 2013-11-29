@@ -25,6 +25,7 @@ from entropy.exceptions import EntropyPackageException, \
     DependenciesCollision, DependenciesNotFound
 from entropy.services.client import WebService
 from entropy.client.interfaces.repository import Repository
+from entropy.client.interfaces.package.preservedlibs import PreservedLibraries
 
 import entropy.tools
 import entropy.dep
@@ -117,6 +118,34 @@ class SoloManage(SoloCommand):
         entropy_client.output(
             darkgreen(mytxt),
             level="warning")
+
+    def _show_preserved_libraries(self, entropy_client):
+        """
+        Inform User about preserved libraries living on the filesystem.
+        """
+        inst_repo = entropy_client.installed_repository()
+        preserved_mgr = PreservedLibraries(
+            inst_repo, None, frozenset(), root=etpConst['systemroot'])
+
+        preserved = preserved_mgr.list()
+
+        if preserved:
+            mytxt = ngettext(
+                "There is %s preserved library on the system",
+                "There are %s preserved libraries on the system",
+                len(preserved)) % (len(preserved),)
+            entropy_client.output(
+                darkgreen(mytxt),
+                level="warning")
+
+        for library, elfclass, path, atom in preserved:
+            entropy_client.output(
+                "%s [%s:%s -> %s]" % (
+                    darkred(path),
+                    purple(library),
+                    teal(const_convert_to_unicode(elfclass)),
+                    enlightenatom(atom),
+                ))
 
     def _show_packages_info(self, entropy_client, package_matches,
                             deps, ask, pretend, verbose, quiet,
@@ -510,23 +539,32 @@ class SoloManage(SoloCommand):
         """
         package_ids = []
         for package in packages:
-            package_id, _result = inst_repo.atomMatch(package)
-            if package_id == -1:
-                mytxt = "!!! %s: %s %s." % (
-                    purple(_("Warning")),
-                    teal(const_convert_to_unicode(package)),
-                    purple(_("is not installed")),
-                )
-                entropy_client.output("!!!", level="warning")
-                entropy_client.output(mytxt, level="warning")
-                entropy_client.output("!!!", level="warning")
 
-                if len(package) > 3:
-                    self._show_did_you_mean(
-                        entropy_client, package, True)
-                    entropy_client.output("!!!", level="warning")
+            package_id, _result = inst_repo.atomMatch(package)
+            if package_id != -1:
+                package_ids.append(package_id)
                 continue
-            package_ids.append(package_id)
+
+            # support file paths and convert them to package_ids
+            file_package_ids = inst_repo.isFileAvailable(
+                package, get_id=True)
+            if file_package_ids:
+                package_ids.extend(file_package_ids)
+                continue
+
+            mytxt = "!!! %s: %s %s." % (
+                purple(_("Warning")),
+                teal(const_convert_to_unicode(package)),
+                purple(_("is not installed")),
+            )
+            entropy_client.output("!!!", level="warning")
+            entropy_client.output(mytxt, level="warning")
+            entropy_client.output("!!!", level="warning")
+
+            if len(package) > 3:
+                self._show_did_you_mean(
+                    entropy_client, package, True)
+                entropy_client.output("!!!", level="warning")
 
         return package_ids
 
@@ -593,7 +631,7 @@ class SoloManage(SoloCommand):
         return run_queue, removal_queue
 
     def _download_packages(self, entropy_client, package_matches,
-                           downdata, multifetch=1, checksum=True):
+                           downdata, multifetch=1):
         """
         Download packages from mirrors, essentially.
         """
@@ -602,6 +640,8 @@ class SoloManage(SoloCommand):
         misc_settings = client_settings['misc']
         if multifetch <= 1:
             multifetch = misc_settings.get('multifetch', 1)
+
+        action_factory = entropy_client.PackageActionFactory()
 
         mymultifetch = multifetch
         if multifetch > 1:
@@ -620,20 +660,23 @@ class SoloManage(SoloCommand):
             for matches in myqueue:
                 count += 1
 
-                metaopts = {}
-                metaopts['dochecksum'] = checksum
+                for pkg_id, pkg_repo in matches:
+                    obj = downdata.setdefault(pkg_repo, set())
+                    repo = entropy_client.open_repository(pkg_repo)
+                    pkg_atom = repo.retrieveAtom(pkg_id)
+                    if pkg_atom:
+                        obj.add(entropy.dep.dep_getkey(pkg_atom))
+
                 pkg = None
                 try:
-                    pkg = entropy_client.Package()
-                    pkg.prepare(matches, "multi_fetch", metaopts)
-                    myrepo_data = pkg.pkgmeta['repository_atoms']
-                    for myrepo in myrepo_data:
-                        obj = downdata.setdefault(myrepo, set())
-                        for atom in myrepo_data[myrepo]:
-                            obj.add(entropy.dep.dep_getkey(atom))
+                    pkg = action_factory.get(
+                        action_factory.MULTI_FETCH_ACTION,
+                        matches)
 
                     xterm_header = "equo (%s) :: %d of %d ::" % (
                         _("download"), count, total)
+                    pkg.set_xterm_header(xterm_header)
+
                     entropy_client.output(
                         "%s %s" % (
                             darkgreen(
@@ -643,13 +686,13 @@ class SoloManage(SoloCommand):
                         count=(count, total),
                         header=darkred(" ::: ") + ">>> ")
 
-                    exit_st = pkg.run(xterm_header=xterm_header)
+                    exit_st = pkg.start()
                     if exit_st != 0:
                         return 1
 
                 finally:
                     if pkg is not None:
-                        pkg.kill()
+                        pkg.finalize()
 
             return 0
 
@@ -659,35 +702,36 @@ class SoloManage(SoloCommand):
         for match in package_matches:
             count += 1
 
-            metaopts = {}
-            metaopts['dochecksum'] = checksum
             pkg = None
             try:
                 package_id, repository_id = match
+
                 atom = entropy_client.open_repository(
                     repository_id).retrieveAtom(package_id)
-                pkg = entropy_client.Package()
-                pkg.prepare(match, "fetch", metaopts)
-                myrepo = pkg.pkgmeta['repository']
+                if atom:
+                    obj = downdata.setdefault(repository_id, set())
+                    obj.add(entropy.dep.dep_getkey(atom))
 
-                obj = downdata.setdefault(myrepo, set())
-                obj.add(entropy.dep.dep_getkey(atom))
+                pkg = action_factory.get(
+                    action_factory.FETCH_ACTION,
+                    match)
 
                 xterm_header = "equo (%s) :: %d of %d ::" % (
                     _("download"), count, total)
+                pkg.set_xterm_header(xterm_header)
 
                 entropy_client.output(
                     darkgreen(atom),
                     count=(count, total),
                     header=darkred(" ::: ") + ">>> ")
 
-                exit_st = pkg.run(xterm_header=xterm_header)
+                exit_st = pkg.start()
                 if exit_st != 0:
                     return 1
 
             finally:
                 if pkg is not None:
-                    pkg.kill()
+                    pkg.finalize()
 
         return 0
 
