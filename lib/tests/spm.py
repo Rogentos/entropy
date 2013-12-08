@@ -4,20 +4,20 @@ import os
 sys.path.insert(0, '.')
 sys.path.insert(0, '../')
 import unittest
-import entropy.tools as et
-from entropy.client.interfaces import Client
-import tests._misc as _misc
-import tempfile
 import shutil
+
+import entropy.tools as et
+from entropy.const import const_mkdtemp
+from entropy.client.interfaces import Client
 
 from entropy.spm.plugins.interfaces.portage_plugin import \
     PortageEntropyDepTranslator
 
+import tests._misc as _misc
+
 class SpmTest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         self.Client = Client(installed_repo = -1, indexing = False,
             xcache = False, repo_validation = False)
         self.test_pkg = _misc.get_test_entropy_package()
@@ -29,8 +29,6 @@ class SpmTest(unittest.TestCase):
         """
         tearDown is run after each test
         """
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
         # calling destroy() and shutdown()
         # need to call destroy() directly to remove all the SystemSettings
         # plugins because shutdown() doesn't, since it's meant to be called
@@ -105,8 +103,8 @@ class SpmTest(unittest.TestCase):
 
         from entropy.spm.plugins.interfaces.portage_plugin import xpak
         from entropy.spm.plugins.interfaces.portage_plugin import xpaktools
-        temp_unpack = tempfile.mkdtemp()
-        temp_unpack2 = tempfile.mkdtemp()
+        temp_unpack = const_mkdtemp(prefix="test_portage_xpak")
+        temp_unpack2 = const_mkdtemp(prefix="test_portage_xpak2")
         test_pkg = os.path.join(temp_unpack2, "test.pkg")
         dbdir = _misc.get_entrofoo_test_spm_portage_dir()
 
@@ -141,7 +139,7 @@ class SpmTest(unittest.TestCase):
             return
 
         from entropy.spm.plugins.interfaces.portage_plugin import xpaktools
-        tmp_path = tempfile.mkdtemp()
+        tmp_path = const_mkdtemp(prefix="test_extract_xpak")
 
         for test_pkg in self.test_pkgs:
             out_path = xpaktools.extract_xpak(test_pkg, tmp_path)
@@ -159,7 +157,7 @@ class SpmTest(unittest.TestCase):
 
         from entropy.spm.plugins.interfaces.portage_plugin import xpaktools
         pkg_path = _misc.get_test_xpak_empty_package()
-        tmp_path = tempfile.mkdtemp()
+        tmp_path = const_mkdtemp(prefix="test_extract_xpak_only")
         out_path = xpaktools.extract_xpak(pkg_path, tmp_path)
 
         self.assertNotEqual(out_path, None)
@@ -169,7 +167,7 @@ class SpmTest(unittest.TestCase):
 
     def test_sets_load(self):
         spm = self.Client.Spm()
-        sets = spm.get_package_sets(True)
+        sets = spm.get_package_sets(False)
         self.assertNotEqual(sets, None)
 
     def test_static_sets_load(self):
@@ -318,5 +316,4 @@ class SpmTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    et.kill_threads()
     raise SystemExit(0)

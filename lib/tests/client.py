@@ -9,12 +9,11 @@ import os
 import shutil
 import signal
 import time
-import tempfile
 
 from entropy.client.interfaces import Client
 from entropy.client.interfaces.db import InstalledPackagesRepository
 from entropy.cache import EntropyCacher
-from entropy.const import etpConst
+from entropy.const import etpConst, const_mkdtemp
 from entropy.output import set_mute
 from entropy.core.settings.base import SystemSettings
 from entropy.db import EntropyRepository
@@ -25,13 +24,11 @@ import tests._misc as _misc
 class EntropyClientTest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         self.mem_repoid = "mem_repo"
         self.mem_repo_desc = "This is a testing repository"
         self.Client = Client(installed_repo = -1, indexing = False,
             xcache = False, repo_validation = False)
-        self.Client._installed_repository = self.Client.open_temp_repository(
+        self.Client._real_installed_repository = self.Client.open_temp_repository(
             name = InstalledPackagesRepository.NAME, temp_file = ":memory:")
         # as per GenericRepository specifications, enable generic handlePackage
         self.Client._installed_repository.override_handlePackage = True
@@ -43,8 +40,6 @@ class EntropyClientTest(unittest.TestCase):
         """
         tearDown is run after each test
         """
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
         # calling destroy() and shutdown()
         # need to call destroy() directly to remove all the SystemSettings
         # plugins because shutdown() doesn't, since it's meant to be called
@@ -100,7 +95,7 @@ class EntropyClientTest(unittest.TestCase):
 
     def test_cacher_lock_usage(self):
         cacher = self.Client._cacher
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = const_mkdtemp()
         cacher.start()
         try:
             with cacher:
@@ -115,7 +110,7 @@ class EntropyClientTest(unittest.TestCase):
 
     def test_cacher_general_usage(self):
         cacher = self.Client._cacher
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = const_mkdtemp()
         cacher.start()
         st_val = EntropyCacher.STASHING_CACHE
         try:
@@ -136,7 +131,7 @@ class EntropyClientTest(unittest.TestCase):
 
     def test_cacher_push_pop_sync(self):
         cacher = self.Client._cacher
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = const_mkdtemp()
         cacher.stop()
         try:
             cacher.push("bar", "foo", async = False, cache_dir = tmp_dir)
@@ -158,16 +153,18 @@ class EntropyClientTest(unittest.TestCase):
         dbconn = self.Client._init_generic_temp_repository(
             self.mem_repoid, self.mem_repo_desc, temp_file = ":memory:")
         test_pkg = _misc.get_test_entropy_package5()
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = const_mkdtemp()
         rc = entropy.tools.uncompress_tarball(test_pkg, extract_path = tmp_dir)
         self.assertEqual(rc, 0)
 
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = dbconn.addPackage(data)
         db_data = dbconn.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
+
         cs_data = dbconn.retrieveContentSafety(idpackage)
         for path, cs_info in cs_data.items():
             real_path = os.path.join(tmp_dir, path.lstrip("/"))
@@ -181,9 +178,11 @@ class EntropyClientTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = dbconn.addPackage(data)
         db_data = dbconn.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
+
         self.Client.remove_repository(self.mem_repoid)
         self.assertNotEqual(
             self.Client._memory_db_instances.get(self.mem_repoid), dbconn)
@@ -231,7 +230,7 @@ class EntropyClientTest(unittest.TestCase):
             pkgdata['affected_infofiles'] = set()
             pkgdata['trigger'] = """\
 #!%s
-echo $@
+echo >/dev/null
 exit 42
 """ % (etpConst['trigger_sh_interpreter'],)
             trigger = self.Client.Triggers(
@@ -258,7 +257,7 @@ exit 42
             pkgdata['affected_infofiles'] = set()
             pkgdata['trigger'] = """\
 import os
-os.system("echo hello")
+os.listdir(".")
 my_ext_status = 42
 """
             trigger = self.Client.Triggers(
@@ -289,18 +288,9 @@ from entropy.const import etpConst
 def configure_correct_gcc():
     gcc_target = "4.5"
     uname_arch = os.uname()[4]
-    gcc_dir = etpConst['systemroot'] + "/etc/env.d/gcc"
-    gcc_profile_file_pfx = uname_arch + "-pc-linux-gnu-" + gcc_target
-    gcc_profile_file = None
-    for curdir, subs, files in os.walk(gcc_dir):
-        for fname in files:
-            if fname.startswith(gcc_profile_file_pfx):
-                gcc_profile_file = fname
-                break
-        break
-    if gcc_profile_file is not None:
-        subprocess.call(("echo", gcc_profile_file))
-    return 42
+    if uname_arch:
+        return 42
+    return 24
 
 if stage == "postinstall":
     my_ext_status = configure_correct_gcc()
@@ -325,13 +315,13 @@ else:
 
         # we need to tweak the default unpack dir to make pkg install available
         # for uids != 0
-        temp_unpack = tempfile.mkdtemp()
+        temp_unpack = const_mkdtemp()
         old_unpackdir = etpConst['entropyunpackdir']
         etpConst['entropyunpackdir'] = temp_unpack
 
-        fake_root = tempfile.mkdtemp()
-        pkg_dir = tempfile.mkdtemp()
-        inst_dir = tempfile.mkdtemp()
+        fake_root = const_mkdtemp()
+        pkg_dir = const_mkdtemp()
+        inst_dir = const_mkdtemp()
 
         s_pkg = SoloPkg(["inflate", pkg_path, "--savedir", pkg_dir])
         func, func_args = s_pkg.parse()
@@ -385,13 +375,13 @@ else:
 
         # we need to tweak the default unpack dir to make pkg install available
         # for uids != 0
-        temp_unpack = tempfile.mkdtemp()
+        temp_unpack = const_mkdtemp()
         old_unpackdir = etpConst['entropyunpackdir']
         etpConst['entropyunpackdir'] = temp_unpack
 
-        fake_root = tempfile.mkdtemp()
-        pkg_dir = tempfile.mkdtemp()
-        inst_dir = tempfile.mkdtemp()
+        fake_root = const_mkdtemp()
+        pkg_dir = const_mkdtemp()
+        inst_dir = const_mkdtemp()
 
         s_pkg = SoloPkg(["inflate", pkg_path, "--savedir", pkg_dir])
         func, func_args = s_pkg.parse()
@@ -449,5 +439,4 @@ else:
 
 if __name__ == '__main__':
     unittest.main()
-    entropy.tools.kill_threads()
     raise SystemExit(0)

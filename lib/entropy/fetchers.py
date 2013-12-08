@@ -909,7 +909,7 @@ class UrlFetcher(TextInterface):
         if len(average) < 2:
             average = " "+average
         current_txt += " <->  "+average+"% "+bartext
-        TextInterface.output(self, current_txt, back = True)
+        TextInterface.output(current_txt, back = True)
 
     def update(self):
         """
@@ -1025,7 +1025,6 @@ class MultipleUrlFetcher(TextInterface):
         """
         self._init_vars()
 
-        th_id = 0
         speed_limit = 0
         dsl = self.__system_settings['repositories']['transfer_limit']
         if isinstance(dsl, int) and self._url_path_list:
@@ -1047,6 +1046,7 @@ class MultipleUrlFetcher(TextInterface):
                 return self.__multiple_fetcher.handle_statistics(*args,
                     **kwargs)
 
+        th_id = 0
         for url, path_to_save in self._url_path_list:
             th_id += 1
             downloader = MyFetcher(self.__url_fetcher, self, url, path_to_save,
@@ -1060,8 +1060,8 @@ class MultipleUrlFetcher(TextInterface):
             )
             downloader.set_id(th_id)
 
-            def do_download(ds, th_id, downloader):
-                ds[th_id] = downloader.download()
+            def do_download(ds, dth_id, downloader):
+                ds[dth_id] = downloader.download()
 
             t = ParallelTask(do_download, self.__download_statuses, th_id,
                 downloader)
@@ -1131,7 +1131,7 @@ class MultipleUrlFetcher(TextInterface):
     def __show_download_files_info(self):
         count = 0
         pl = self._url_path_list[:]
-        TextInterface.output(self,
+        TextInterface.output(
             "%s: %s %s" % (
                 darkblue(_("Aggregated download")),
                 darkred(str(len(pl))),
@@ -1145,7 +1145,7 @@ class MultipleUrlFetcher(TextInterface):
             count += 1
             fname = os.path.basename(url)
             uri = spliturl(url)[1]
-            TextInterface.output(self,
+            TextInterface.output(
                 "[%s] %s => %s" % (
                     darkblue(str(count)),
                     darkgreen(uri),
@@ -1233,10 +1233,9 @@ class MultipleUrlFetcher(TextInterface):
         if total_size > 0 and all_started:
             average = int(float(downloaded_size / 1000) / total_size * 100)
 
-        if all_started:
-            time_remaining_str = convert_seconds_to_fancy_output(time_remaining)
-        else:
-            time_remaining_str = _("Infinity")
+        time_remaining_str = convert_seconds_to_fancy_output(time_remaining)
+        if not all_started:
+            time_remaining_str = "~%s" % (time_remaining_str,)
 
         return {
             "downloaded_size": downloaded_size,
@@ -1254,7 +1253,6 @@ class MultipleUrlFetcher(TextInterface):
         downloaded_size = stats["downloaded_size"]
         total_size = stats["total_size"]
         time_remaining = stats["time_remaining"]
-        all_started = stats["all_started"]
         data_transfer = stats["data_transfer"]
         average = stats["average"]
         time_remaining_str = stats["time_remaining_str"]
@@ -1301,7 +1299,7 @@ class MultipleUrlFetcher(TextInterface):
             if len(myavg) < 2:
                 myavg = " "+myavg
             current_txt += " <->  "+myavg+"% "+bartext+" "
-            TextInterface.output(self, current_txt, back = True)
+            TextInterface.output(current_txt, back = True)
 
         self.__old_average = average
 

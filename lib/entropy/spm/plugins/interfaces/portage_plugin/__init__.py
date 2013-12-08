@@ -579,6 +579,13 @@ class PortagePlugin(SpmPlugin):
     if "/usr/lib/gentoolkit/pym" not in sys.path:
         sys.path.append("/usr/lib/gentoolkit/pym")
 
+    # Portage now installs its modules into site-packages.
+    # However, if it's compiled only for py2.7, running
+    # this code with py3.3 won't work. So, add the real
+    # portage/pym path.
+    if "/usr/lib/portage/pym" not in sys.path:
+        sys.path.append("/usr/lib/portage/pym")
+
     def init_singleton(self, output_interface):
 
         self.__output = output_interface
@@ -1303,13 +1310,16 @@ class PortagePlugin(SpmPlugin):
         exec_path = os.path.join(dirname, "env_sourcer.sh")
         args = [exec_path, env_file, env_var]
         tmp_fd, tmp_path = None, None
+        tmp_err_fd, tmp_err_path = None, None
         raw_enc = etpConst['conf_raw_encoding']
 
         try:
             tmp_fd, tmp_path = const_mkstemp(
                 prefix="entropy.spm.__source_env_get_var")
+            tmp_err_fd, tmp_err_path = const_mkstemp(
+                prefix="entropy.spm.__source_env_get_var_err")
 
-            sts = subprocess.call(args, stdout = tmp_fd)
+            sts = subprocess.call(args, stdout = tmp_fd, stderr = tmp_err_fd)
             if sts != 0:
                 raise IOError("cannot source %s and get %s" % (
                         env_file, env_var,))
@@ -1324,17 +1334,19 @@ class PortagePlugin(SpmPlugin):
             return const_convert_to_unicode(output, enctype = raw_enc)
 
         finally:
-            if tmp_fd is not None:
-                try:
-                    os.close(tmp_fd)
-                except OSError:
-                    pass
-            if tmp_path is not None:
-                try:
-                    os.remove(tmp_path)
-                except OSError as err:
-                    if err.errno != errno.ENOENT:
-                        raise
+            for fd in (tmp_fd, tmp_err_fd):
+                if fd is not None:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+            for path in (tmp_path, tmp_err_path):
+                if path is not None:
+                    try:
+                        os.remove(path)
+                    except OSError as err:
+                        if err.errno != errno.ENOENT:
+                            raise
 
     def __pkg_sources_filtering(self, sources):
         sources.discard("->")
@@ -1606,7 +1618,6 @@ class PortagePlugin(SpmPlugin):
             data['eapi']
         )
 
-        data['provide'] = set(portage_metadata['PROVIDE'])
         data['license'] = " ".join(portage_metadata['LICENSE'])
         data['useflags'] = []
         data['useflags'].extend(portage_metadata['ENABLED_USE'])
@@ -1620,18 +1631,27 @@ class PortagePlugin(SpmPlugin):
         # sources must be a set, as returned by entropy.db.getPackageData
         data['sources'] = set(portage_metadata['SRC_URI'])
         data['sources'] = self.__pkg_sources_filtering(data['sources'])
-        data['dependencies'] = {}
+
+        data['pkg_dependencies'] = set()
 
         dep_keys = {
             "RDEPEND": etpConst['dependency_type_ids']['rdepend_id'],
             "PDEPEND": etpConst['dependency_type_ids']['pdepend_id'],
             "DEPEND": etpConst['dependency_type_ids']['bdepend_id'],
         }
+        dep_duplicates = set()
         for dep_key, dep_val in dep_keys.items():
             for x in portage_metadata[dep_key]:
                 if x.startswith("!") or (x in ("(", "||", ")", "")):
                     continue
-                data['dependencies'][x] = dep_val
+
+                if (x, dep_val) in dep_duplicates:
+                    continue
+                dep_duplicates.add((x, dep_val))
+
+                data['pkg_dependencies'].add((x, dep_val))
+
+        dep_duplicates.clear()
 
         data['conflicts'] = [x.replace("!", "") for x in \
             portage_metadata['RDEPEND'] + \
@@ -1639,8 +1659,11 @@ class PortagePlugin(SpmPlugin):
             x.startswith("!") and not x in ("(", "||", ")", "")]
 
         if kern_dep_key is not None:
-            data['dependencies'][kern_dep_key] = \
-                etpConst['dependency_type_ids']['rdepend_id']
+            kern_dep_id = etpConst['dependency_type_ids']['rdepend_id']
+            data['pkg_dependencies'].add((kern_dep_key, kern_dep_id))
+
+        # force a tuple object
+        data['pkg_dependencies'] = tuple(data['pkg_dependencies'])
 
         # conflicts must be a set, which is what is returned
         # by entropy.db.getPackageData
@@ -1649,9 +1672,10 @@ class PortagePlugin(SpmPlugin):
         # old-style virtual support, we need to check if this pkg provides
         # PROVIDE metadatum which points to itself, if so, this is the
         # default
+        del data['provide']
         provide_extended = set()
         myself_provide_key = data['category'] + "/" + data['name']
-        for provide_key in data['provide']:
+        for provide_key in set(portage_metadata['PROVIDE']):
             is_provide_default = 0
             try:
                 profile_default_provide = self._get_default_virtual_pkg(
@@ -1691,10 +1715,6 @@ class PortagePlugin(SpmPlugin):
         data['config_protect'] = ' '.join(self.get_merge_protected_paths())
         data['config_protect_mask'] = ' '.join(
             self.get_merge_protected_paths_mask())
-
-        # kept for backward compatibility, remove in late 2011
-        data['messages'] = []
-        data['eclasses'] = []
 
         # etpapi must be int, as returned by entropy.db.getPackageData
         data['etpapi'] = int(etpConst['etpapi'])
@@ -1918,24 +1938,27 @@ class PortagePlugin(SpmPlugin):
         if root is None:
             root = etpConst['systemroot'] + os.path.sep
 
-        vartree = self._get_portage_vartree(root)
-        dbbuild = self.get_installed_package_build_script_path(package,
-            root = root)
+        with self._PortageVdbLocker(self, root = root):
 
-        counter_dir = os.path.dirname(dbbuild)
-        counter_name = PortagePlugin.xpak_entries['counter']
-        counter_path = os.path.join(counter_dir, counter_name)
+            vartree = self._get_portage_vartree(root)
+            dbbuild = self.get_installed_package_build_script_path(package,
+                root = root)
 
-        if not const_dir_readable(counter_dir):
-            raise self.Error("SPM package directory not found")
+            counter_dir = os.path.dirname(dbbuild)
+            counter_name = PortagePlugin.xpak_entries['counter']
+            counter_path = os.path.join(counter_dir, counter_name)
 
-        enc = etpConst['conf_encoding']
-        try:
-            with codecs.open(counter_path, "w", encoding=enc) as count_f:
-                new_counter = vartree.dbapi.counter_tick(root, mycpv = package)
-                count_f.write(const_convert_to_unicode(new_counter))
-        finally:
-            self._bump_vartree_mtime(package, root = root)
+            if not const_dir_readable(counter_dir):
+                raise self.Error("SPM package directory not found")
+
+            enc = etpConst['conf_encoding']
+            try:
+                with codecs.open(counter_path, "w", encoding=enc) as count_f:
+                    new_counter = vartree.dbapi.counter_tick(
+                        root, mycpv = package)
+                    count_f.write(const_convert_to_unicode(new_counter))
+            finally:
+                self._bump_vartree_mtime(package, root = root)
 
         return new_counter
 
@@ -2891,10 +2914,10 @@ class PortagePlugin(SpmPlugin):
                 os.utime(x, t)
             except OSError as err:
                 sys.stderr.write("OSError, cannot update %s mtime, %s\n" % (
-                        x, repr(err),))
+                    x, err,))
             except IOError as err:
                 sys.stderr.write("IOError, cannot update %s mtime, %s\n" % (
-                        x, repr(err),))
+                        x, err,))
 
     def __splitdebug_update_contents_file(self, contents_path, splitdebug_dirs):
 
@@ -2924,8 +2947,16 @@ class PortagePlugin(SpmPlugin):
 
         os.rename(contents_path+".tmp", contents_path)
 
-    def _create_contents_file_if_not_available(self, pkg_dir,
-        entropy_package_metadata):
+    def _create_contents_file_if_not_available(
+            self, pkg_dir, entropy_package_metadata):
+
+        root = etpConst['systemroot'] + os.path.sep
+        with self._PortageVdbLocker(self, root = root):
+            return self._create_contents_file_if_not_available_unlocked(
+                root, pkg_dir, entropy_package_metadata)
+
+    def _create_contents_file_if_not_available_unlocked(
+            self, root, pkg_dir, entropy_package_metadata):
 
         c_file = PortagePlugin.xpak_entries['contents']
         cont_path = os.path.join(pkg_dir, c_file)
@@ -2975,18 +3006,16 @@ class PortagePlugin(SpmPlugin):
             if hasattr(entropy_content_iter, "close"):
                 entropy_content_iter.close()
 
-        utf_sys_root = etpConst['systemroot'] + os.path.sep
         portage_cpv = PortagePlugin._pkg_compose_atom(
             entropy_package_metadata)
-        self._bump_vartree_mtime(portage_cpv, root = utf_sys_root)
+        self._bump_vartree_mtime(portage_cpv, root = root)
 
         enc = etpConst['conf_encoding']
         with codecs.open(cont_path, "w", encoding=enc) as cont_f:
             # NOTE: content_meta contains paths with ROOT prefix, it's ok
-            write_contents(content_meta, utf_sys_root, cont_f)
+            write_contents(content_meta, root, cont_f)
 
-        del content_meta
-        self._bump_vartree_mtime(portage_cpv, root = utf_sys_root)
+        self._bump_vartree_mtime(portage_cpv, root = root)
 
     def _get_portage_sets_object(self):
         try:
@@ -3073,12 +3102,21 @@ class PortagePlugin(SpmPlugin):
         """
         Reimplemented from SpmPlugin class.
         """
+        root = etpConst['systemroot'] + os.path.sep
+        with self._PortageVdbLocker(self, root = root):
+            return self._add_installed_package_unlocked(
+                root, package_metadata)
+
+    def _add_installed_package_unlocked(self, root, package_metadata):
+        """
+        add_installed_package() body assuming that vdb lock has been
+        already acquired.
+        """
         atomsfound = set()
         spm_package = PortagePlugin._pkg_compose_atom(package_metadata)
         key = entropy.dep.dep_getkey(spm_package)
         category = key.split("/")[0]
 
-        root = etpConst['systemroot'] + os.path.sep
         build = self.get_installed_package_build_script_path(
             spm_package, root = root)
         pkg_dir = package_metadata.get('unittest_root', '') + \
@@ -3138,62 +3176,58 @@ class PortagePlugin(SpmPlugin):
                 self.__splitdebug_update_contents_file(contents_path,
                     splitdebug_dirs)
 
-            # lock vdb before making changes
-            with self._PortageVdbLocker(self, root = root):
+            tmp_dir = const_mkdtemp(
+                dir=cat_dir, prefix="-MERGING-")
 
-                tmp_dir = const_mkdtemp(
-                    dir=cat_dir, prefix="-MERGING-")
+            vdb_failed = False
+            try:
+                for f_name in os.listdir(copypath):
+                    f_path = os.path.join(copypath, f_name)
+                    dest_path = os.path.join(tmp_dir, f_name)
+                    shutil.copy2(f_path, dest_path)
+                # this should not really exist here
+                if os.path.isdir(pkg_dir):
+                    shutil.rmtree(pkg_dir)
+                os.chmod(tmp_dir, 0o755)
+                os.rename(tmp_dir, pkg_dir)
+            except (IOError, OSError) as err:
+                mytxt = "%s: %s: %s: %s" % (red(_("QA")),
+                    brown(_("Cannot update Portage package metadata")),
+                    purple(tmp_dir), err,)
+                self.__output.output(
+                    mytxt,
+                    importance = 1,
+                    level = "warning",
+                    header = darkred("   ## ")
+                )
+                shutil.rmtree(tmp_dir)
+                vdb_failed = True
 
-                vdb_failed = False
+            # this is a Unit Testing setting, so it's always not available
+            # unless in unit testing code
+            if not package_metadata.get('unittest_root') and \
+                (not vdb_failed):
+
+                # Packages emerged with -B don't contain CONTENTS file
+                # in their metadata, so we have to create one
+                self._create_contents_file_if_not_available(pkg_dir,
+                    package_metadata['triggers']['install'])
+
                 try:
-                    for f_name in os.listdir(copypath):
-                        f_path = os.path.join(copypath, f_name)
-                        dest_path = os.path.join(tmp_dir, f_name)
-                        shutil.copy2(f_path, dest_path)
-                    # this should not really exist here
-                    if os.path.isdir(pkg_dir):
-                        shutil.rmtree(pkg_dir)
-                    os.chmod(tmp_dir, 0o755)
-                    os.rename(tmp_dir, pkg_dir)
-                except (IOError, OSError) as err:
-                    mytxt = "%s: %s: %s: %s" % (red(_("QA")),
-                        brown(_("Cannot update Portage package metadata")),
-                        purple(tmp_dir), err,)
+                    counter = self.assign_uid_to_installed_package(
+                        spm_package, root = root)
+                except self.Error as err:
+                    mytxt = "%s: %s [%s]" % (
+                        brown(_("SPM uid update error")), pkg_dir, err,
+                    )
                     self.__output.output(
-                        mytxt,
+                        red("QA: ") + mytxt,
                         importance = 1,
                         level = "warning",
                         header = darkred("   ## ")
                     )
-                    shutil.rmtree(tmp_dir)
-                    vdb_failed = True
+                    counter = -1
 
-                # this is a Unit Testing setting, so it's always not available
-                # unless in unit testing code
-                if not package_metadata.get('unittest_root') and \
-                    (not vdb_failed):
-
-                    # Packages emerged with -B don't contain CONTENTS file
-                    # in their metadata, so we have to create one
-                    self._create_contents_file_if_not_available(pkg_dir,
-                        package_metadata['triggers']['install'])
-
-                    try:
-                        counter = self.assign_uid_to_installed_package(
-                            spm_package, root = root)
-                    except self.Error as err:
-                        mytxt = "%s: %s [%s]" % (
-                            brown(_("SPM uid update error")), pkg_dir, err,
-                        )
-                        self.__output.output(
-                            red("QA: ") + mytxt,
-                            importance = 1,
-                            level = "warning",
-                            header = darkred("   ## ")
-                        )
-                        counter = -1
-
-        # from this point, every vardb change has to be committed
         self._bump_vartree_mtime(spm_package, root = root)
 
         user_inst_source = etpConst['install_sources']['user']
@@ -3222,7 +3256,7 @@ class PortagePlugin(SpmPlugin):
 
         try:
 
-            with self._PortageWorldSetLocker(self):
+            with self._PortageWorldSetLocker(self, root = root):
 
                 try:
                     with codecs.open(world_file, "r", encoding=enc) \
@@ -3266,78 +3300,87 @@ class PortagePlugin(SpmPlugin):
         """
         Reimplemented from SpmPlugin class.
         """
+        root = etpConst['systemroot'] + os.path.sep
+
+        with self._PortageVdbLocker(self, root = root):
+            return self._remove_installed_package_unlocked(
+                root, package_metadata)
+
+    def _remove_installed_package_unlocked(self, root, package_metadata):
+        """
+        remove_installed_package() body assuming that vdb lock has been
+        already acquired.
+        """
         atom = entropy.dep.remove_tag(package_metadata['removeatom'])
         remove_build = self.get_installed_package_build_script_path(atom)
         remove_path = os.path.dirname(remove_build)
         key = entropy.dep.dep_getkey(atom)
 
-        with self._PortageVdbLocker(self):
+        try:
+            others_installed = self.match_installed_package(key,
+                match_all = True)
+        except KeyError:
+            others_installed = []
 
-            try:
-                others_installed = self.match_installed_package(key,
-                    match_all = True)
-            except KeyError:
-                others_installed = []
+        # Support for tagged packages
+        slot = package_metadata['slot']
+        tag = package_metadata['versiontag']
+        if (tag == slot) and tag:
+            # old kernel tagged pkgs protocol
+            slot = "0"
+        elif tag and ("," in slot):
+            # new kernel tagged pkgs protocol
+            slot = entropy.dep.remove_tag_from_slot(slot)
 
-            # Support for tagged packages
-            slot = package_metadata['slot']
-            tag = package_metadata['versiontag']
-            if (tag == slot) and tag:
-                # old kernel tagged pkgs protocol
-                slot = "0"
-            elif tag and ("," in slot):
-                # new kernel tagged pkgs protocol
-                slot = entropy.dep.remove_tag_from_slot(slot)
-
-            def do_rm_path_atomic(xpath):
-                for my_el in os.listdir(xpath):
-                    my_el = os.path.join(xpath, my_el)
-                    try:
-                        os.remove(my_el)
-                    except OSError:
-                        pass
+        def do_rm_path_atomic(xpath):
+            for my_el in os.listdir(xpath):
+                my_el = os.path.join(xpath, my_el)
                 try:
-                    os.rmdir(xpath)
+                    os.remove(my_el)
+                except OSError:
+                    pass
+            try:
+                os.rmdir(xpath)
+            except OSError:
+                pass
+
+        if os.path.isdir(remove_path):
+            do_rm_path_atomic(remove_path)
+
+        # also remove parent directory if empty
+        category_path = os.path.dirname(remove_path)
+        if os.path.isdir(category_path):
+            if not os.listdir(category_path):
+                try:
+                    os.rmdir(category_path)
                 except OSError:
                     pass
 
-            if os.path.isdir(remove_path):
-                do_rm_path_atomic(remove_path)
+        if isinstance(others_installed, (list, set, tuple)):
 
-            # also remove parent directory if empty
-            category_path = os.path.dirname(remove_path)
-            if os.path.isdir(category_path):
-                if not os.listdir(category_path):
-                    try:
-                        os.rmdir(category_path)
-                    except OSError:
-                        pass
+            for myatom in others_installed:
 
-            if isinstance(others_installed, (list, set, tuple)):
+                if myatom == atom:
+                    # do not remove self
+                    continue
 
-                for myatom in others_installed:
+                try:
+                    myslot = self.get_installed_package_metadata(myatom,
+                        "SLOT")
+                except KeyError:
+                    # package got removed or not available or broken
+                    continue
 
-                    if myatom == atom:
-                        # do not remove self
-                        continue
+                if myslot != slot:
+                    continue
+                mybuild = self.get_installed_package_build_script_path(
+                    myatom)
+                mydir = os.path.dirname(mybuild)
+                if not os.path.isdir(mydir):
+                    continue
+                do_rm_path_atomic(mydir)
 
-                    try:
-                        myslot = self.get_installed_package_metadata(myatom,
-                            "SLOT")
-                    except KeyError:
-                        # package got removed or not available or broken
-                        continue
-
-                    if myslot != slot:
-                        continue
-                    mybuild = self.get_installed_package_build_script_path(
-                        myatom)
-                    mydir = os.path.dirname(mybuild)
-                    if not os.path.isdir(mydir):
-                        continue
-                    do_rm_path_atomic(mydir)
-
-        with self._PortageWorldSetLocker(self):
+        with self._PortageWorldSetLocker(self, root = root):
             try:
                 self.__remove_update_world_file(key, slot)
             except UnicodeDecodeError:
@@ -3791,9 +3834,9 @@ class PortagePlugin(SpmPlugin):
 
                 # we need to get the .xpak from database
                 xdbconn = entropy_client.open_repository(
-                    package_metadata['repository'])
+                    package_metadata['repository_id'])
                 xpakdata = xdbconn.retrieveSpmMetadata(
-                    package_metadata['idpackage'])
+                    package_metadata['package_id'])
                 if xpakdata:
                     # save into a file
                     with open(xpak_path, "wb") as xpak_f:

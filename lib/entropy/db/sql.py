@@ -1249,12 +1249,10 @@ class EntropySQLRepository(EntropyRepositoryBase):
             mybaseinfo_data = (package_id,)+mybaseinfo_data
 
             # merge old manual dependencies
-            dep_dict = pkg_data['dependencies']
+            m_dep_id = etpConst['dependency_type_ids']['mdepend_id']
+
             for manual_dep in manual_deps:
-                if manual_dep in dep_dict:
-                    continue
-                dep_dict[manual_dep] = \
-                    etpConst['dependency_type_ids']['mdepend_id']
+                pkg_data['pkg_dependencies'] += ((manual_dep, m_dep_id),)
 
         cur = self._cursor().execute("""
         INSERT INTO baseinfo VALUES
@@ -1299,7 +1297,9 @@ class EntropySQLRepository(EntropyRepositoryBase):
 
         # tables using a select
         self._insertNeeded(package_id, pkg_data['needed'])
-        self.insertDependencies(package_id, pkg_data['dependencies'])
+
+        self.insertDependencies(package_id, pkg_data['pkg_dependencies'])
+
         self._insertSources(package_id, pkg_data['sources'])
         self._insertUseflags(package_id, pkg_data['useflags'])
         self._insertKeywords(package_id, pkg_data['keywords'])
@@ -1364,10 +1364,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
             self._insertTrigger(package_id, pkg_data['trigger'])
         self._insertConflicts(package_id, pkg_data['conflicts'])
 
-        if "provide_extended" not in pkg_data:
-            self._insertProvide(package_id, pkg_data['provide'])
-        else:
-            self._insertProvide(package_id, pkg_data['provide_extended'])
+        self._insertProvide(package_id, pkg_data['provide_extended'])
 
         self._insertConfigProtect(package_id, idprotect)
         self._insertConfigProtect(package_id, idprotect_mask, mask = True)
@@ -1684,30 +1681,27 @@ class EntropySQLRepository(EntropyRepositoryBase):
         """
         Reimplemented from EntropyRepositoryBase.
         """
-        dcache = set()
-        add_dep = self._addDependency
-        is_dep_avail = self._isDependencyAvailable
 
-        deps = []
-        for dep in depdata:
-            if dep in dcache:
-                continue
-            iddep = is_dep_avail(dep)
-            if iddep == -1:
-                iddep = add_dep(dep)
+        def insert_list():
+            deps = []
+            for dep in depdata:
+                deptype = 0
+                if isinstance(dep, tuple):
+                    dep, deptype = dep
+                elif isinstance(depdata, dict):
+                    deptype = depdata[dep]
 
-            deptype = 0
-            if isinstance(depdata, dict):
-                deptype = depdata[dep]
+                iddep = self._isDependencyAvailable(dep)
+                if iddep == -1:
+                    iddep = self._addDependency(dep)
 
-            dcache.add(dep)
-            deps.append((package_id, iddep, deptype,))
+                deps.append((package_id, iddep, deptype,))
 
-        del dcache
+            return deps
 
         self._cursor().executemany("""
         INSERT INTO dependencies VALUES (?, ?, ?)
-        """, deps)
+        """, insert_list())
 
     def insertContent(self, package_id, content, already_formatted = False):
         """

@@ -181,6 +181,9 @@ class Rigo(Gtk.Application):
         icons = get_sc_icon_theme(DATA_DIR)
 
         self._activity_rwsem = ReadersWritersSemaphore()
+
+        # This relies on the fact that the installed packages repository
+        # is lazily loaded (thus, schema update code is).
         self._entropy = Client()
         self._entropy_ws = EntropyWebService(self._entropy)
 
@@ -348,6 +351,14 @@ class Rigo(Gtk.Application):
                                  settings,
                                  Gdk.Screen.get_default(),
                                  DATA_DIR)
+
+        # Force the initialization of the css provider asap.
+        # This fixes a glitch with GTK 3.10
+        init_sc_css_provider(
+            self._window,
+            settings,
+            Gdk.Screen.get_default(),
+            DATA_DIR)
 
         self._nc = UpperNotificationViewController(
             self._entropy, self._entropy_ws, self._notification)

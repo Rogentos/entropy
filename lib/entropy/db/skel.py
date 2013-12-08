@@ -693,7 +693,7 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
                 'cxxflags': '-Os -march=x86-64 -pipe',
                 'injected': False,
                 'licensedata': {'ZLIB': u"lictext"},
-                'dependencies': {},
+                'pkg_dependencies': tuple(),
                 'chost': 'x86_64-pc-linux-gn',
                 'config_protect': 'string string',
                 'download': 'packages/amd64/4/sys-libs:zlib-1.2.3-r1.tbz2',
@@ -706,10 +706,9 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
                 'name': 'zlib',
                 'versiontag': '',
                 'changelog': u"text",
-                'provide': set([]),
+                'provide_extended': set([]),
                 'trigger': 'text',
                 'counter': 22331,
-                'messages': [],
                 'branch': '4',
                 'content': {},
                 'content_safety': {},
@@ -1026,7 +1025,8 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
     def insertDependencies(self, package_id, depdata):
         """
         Insert dependencies for package. "depdata" is a dict() with dependency
-        strings as keys and dependency type as values.
+        strings as keys and dependency type as values or a sequence of tuples
+        composed by (dep, dep type).
 
         @param package_id: package indentifier
         @type package_id: int
@@ -1484,14 +1484,13 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
             'sources': sources,
             'needed': self.retrieveNeeded(package_id, extended = True),
             'provided_libs': self.retrieveProvidedLibraries(package_id),
-            'provide': provide (the old provide metadata version)
             'provide_extended': self.retrieveProvide(package_id),
             'conflicts': self.retrieveConflicts(package_id),
             'licensedata': self.retrieveLicenseData(package_id),
             'content': content,
             'content_safety': {},
-            'dependencies': dict((x, y,) for x, y in \
-                self.retrieveDependencies(package_id, extended = True)),
+            'pkg_dependencies': self.retrieveDependencies(package_id,
+                                                          extended = True),
             'mirrorlinks': [[x,self.retrieveMirrorData(x)] for x in mirrornames],
             'signatures': signatures,
             'spm_phases': self.retrieveSpmPhases(package_id),
@@ -1536,21 +1535,16 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
             'gpg': gpg,
         }
 
-        provide_extended = self.retrieveProvide(package_id)
-        # TODO: remove this before 31-12-2011
-        old_provide = set()
-        for x in provide_extended:
-            if isinstance(x, tuple):
-                old_provide.add(x[0])
-            else:
-                old_provide.add(x)
-
         changelog = None
         if get_changelog:
             changelog = self.retrieveChangelog(package_id)
         content_safety = {}
         if get_content_safety:
             content_safety = self.retrieveContentSafety(package_id)
+
+        deps = self.retrieveDependencies(
+            package_id, extended = True,
+            resolve_conditional_deps = False)
 
         data = {
             'atom': atom,
@@ -1574,9 +1568,6 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
             'revision': revision,
             # risky to add to the sql above, still
             'counter': self.retrieveSpmUid(package_id),
-            'messages': [],
-            # TODO: backward compatibility, drop after 2011
-            'eclasses': [],
             'trigger': self.retrieveTrigger(package_id),
             'disksize': self.retrieveOnDiskSize(package_id),
             'changelog': changelog,
@@ -1589,15 +1580,12 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
             'sources': sources,
             'needed': self.retrieveNeeded(package_id, extended = True),
             'provided_libs': self.retrieveProvidedLibraries(package_id),
-            'provide': old_provide,
-            'provide_extended': provide_extended,
+            'provide_extended': self.retrieveProvide(package_id),
             'conflicts': self.retrieveConflicts(package_id),
             'licensedata': self.retrieveLicenseData(package_id),
             'content': content,
             'content_safety': content_safety,
-            'dependencies': dict((x, y,) for x, y in \
-                self.retrieveDependencies(package_id, extended = True,
-                    resolve_conditional_deps = False)),
+            'pkg_dependencies': deps,
             'mirrorlinks': [[x, self.retrieveMirrorData(x)] for x in mirrornames],
             'signatures': signatures,
             'spm_phases': self.retrieveSpmPhases(package_id),
@@ -1772,7 +1760,7 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
                 package.appendChild(provides)
 
             dependencies = doc.createElement("dependencies")
-            if data['dependencies']:
+            if data.get('pkg_dependencies'):
                 dep_type_ids = etpConst['dependency_type_ids']
                 dep_type_map = {
                     dep_type_ids['bdepend_id']: "buildtime",
@@ -1787,8 +1775,7 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
                     dependency.setAttribute("conflict", "true")
                     dependencies.appendChild(dependency)
 
-                for dep in sorted(data['dependencies']):
-                    dep_type = dep_type_map[data['dependencies'][dep]]
+                for dep, dep_type in sorted(data['pkg_dependencies']):
                     dependency = doc.createElement("dependency")
                     dependency.appendChild(doc.createTextNode(dep))
                     dependency.setAttribute("type", dep_type)
@@ -4942,14 +4929,7 @@ class EntropyRepositoryBase(TextInterface, EntropyRepositoryPluginStore):
             # to go further and search stuff using category and name since
             # we wouldn't find anything new
             if old_style_virtuals is not None:
-                v_results = set()
-                for package_id in results:
-                    virtual_cat, virtual_name = self.retrieveKeySplit(package_id)
-                    v_result = self.searchNameCategory(
-                        virtual_name, virtual_cat, just_id = True)
-                    v_results.update(v_result)
-                del results
-                return set(v_results), old_style_virtuals
+                return set(results), old_style_virtuals
 
             # if it's because category differs, it's a problem
             found_cat = None

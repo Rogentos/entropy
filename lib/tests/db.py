@@ -18,11 +18,10 @@ import tests._misc as _misc
 import entropy.dep
 import entropy.tools
 
+
 class EntropyRepositoryTest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         self.Client = Client(installed_repo = -1, indexing = False,
             xcache = False, repo_validation = False)
         self.Spm = self.Client.Spm()
@@ -47,8 +46,6 @@ class EntropyRepositoryTest(unittest.TestCase):
         """
         tearDown is run after each test
         """
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
         self.test_db.close()
         self.test_db2.close()
         # calling destroy() and shutdown()
@@ -120,8 +117,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
+
         self.assertEqual(data, db_data)
         path = "/usr/include/zconf.h"
         content_safety = self.test_db.searchContentSafety(path)
@@ -139,9 +137,11 @@ class EntropyRepositoryTest(unittest.TestCase):
             data = self.Spm.extract_package_metadata(test_pkg)
             idpackage = self.test_db.addPackage(data)
             db_data = self.test_db.getPackageData(idpackage)
-            del db_data['original_repository']
-            del db_data['extra_download']
+
+            _misc.clean_pkg_metadata(db_data)
+            _misc.clean_pkg_metadata(data)
             self.assertEqual(data, db_data)
+
             db_needed = self.test_db.retrieveNeeded(
                 idpackage, extended = True)
             self.assertEqual(db_needed, data['needed'])
@@ -155,14 +155,24 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
-        pkg_deps = sorted(self.test_db.retrieveDependencies(
-            idpackage, extended = True))
-        orig_pkg_deps = sorted((('=dev-libs/apr-1*', 0),
-            ('dev-libs/openssl', 0), ('dev-libs/libpcre', 0),
-            ('=dev-libs/apr-util-1*', 0)))
+
+        pkg_deps = sorted(
+            self.test_db.retrieveDependencies(
+                idpackage, extended = True))
+        orig_pkg_deps = sorted([
+                ('=dev-libs/apr-1*', 0),
+                ('dev-libs/openssl', 0),
+                ('dev-libs/libpcre', 0),
+                ('=dev-libs/apr-util-1*', 0),
+                ('=dev-libs/apr-1*', 3),
+                ('dev-libs/openssl', 3),
+                ('dev-libs/libpcre', 3),
+                ('=dev-libs/apr-util-1*', 3),
+                ])
+
         self.assertEqual(pkg_deps, orig_pkg_deps)
 
     def test_use_dependencies(self):
@@ -170,9 +180,11 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
+
         useflags = self.test_db.retrieveUseflags(idpackage)
         self.assertTrue("gtk" not in useflags)
         self.assertTrue("-gtk" in useflags)
@@ -185,8 +197,10 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
+
         self.assertEqual(data, db_data)
         content = self.test_db.retrieveContent(
             idpackage, extended = True, order_by="file")
@@ -323,8 +337,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
     def test_db_cache(self):
@@ -367,8 +382,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
         # match
@@ -431,8 +447,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         }
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
         # match
@@ -469,8 +486,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
         # match
@@ -507,8 +525,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
         known_mime = set(['application/ogg', 'audio/x-oggflac', 'audio/x-mp3',
@@ -554,8 +573,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(db_data)
+        _misc.clean_pkg_metadata(data)
         self.assertEqual(data, db_data)
 
         # match
@@ -572,12 +592,13 @@ class EntropyRepositoryTest(unittest.TestCase):
         # insert/compare
         test_pkg = _misc.get_test_entropy_package_tag()
         data = self.Spm.extract_package_metadata(test_pkg)
+        _misc.clean_pkg_metadata(data)
 
         def handle_pkg(xdata):
             idpackage = self.test_db.addPackage(xdata)
             db_data = self.test_db.getPackageData(idpackage)
-            del db_data['original_repository']
-            del db_data['extra_download']
+
+            _misc.clean_pkg_metadata(db_data)
             self.assertEqual(xdata, db_data)
 
         t1 = ParallelTask(handle_pkg, data)
@@ -609,6 +630,8 @@ class EntropyRepositoryTest(unittest.TestCase):
 
         test_pkg = _misc.get_test_entropy_package_tag()
         data = self.Spm.extract_package_metadata(test_pkg)
+        _misc.clean_pkg_metadata(data)
+
         _tmp_data = {
             "path": None,
             "db": None,
@@ -620,14 +643,18 @@ class EntropyRepositoryTest(unittest.TestCase):
         def handle_pkg(_tmp_data, xdata):
             idpackage = self.test_db.addPackage(xdata)
             db_data = self.test_db.getPackageData(idpackage)
-            del db_data['original_repository']
-            del db_data['extra_download']
+
+            _misc.clean_pkg_metadata(db_data)
             self.assertEqual(xdata, db_data)
             self.test_db.commit()
             fd, buf_file = tempfile.mkstemp()
             os.close(fd)
             buf = open(buf_file, "wb")
+
+            set_mute(True)
             self.test_db.exportRepository(buf)
+            set_mute(False)
+
             buf.flush()
             buf.close()
 
@@ -694,26 +721,29 @@ class EntropyRepositoryTest(unittest.TestCase):
 
     def test_db_reverse_deps(self):
 
-        # insert/compare
         test_pkg = _misc.get_test_package()
         data = self.Spm.extract_package_metadata(test_pkg)
         test_pkg2 = _misc.get_test_package2()
         data2 = self.Spm.extract_package_metadata(test_pkg2)
-        data['dependencies'][_misc.get_test_package_atom2()] = \
-            etpConst['dependency_type_ids']['rdepend_id']
-        data2['dependencies'][_misc.get_test_package_atom()] = \
-            etpConst['dependency_type_ids']['rdepend_id']
+        data['pkg_dependencies'] += ((
+                _misc.get_test_package_atom2(),
+                etpConst['dependency_type_ids']['rdepend_id']),)
+        data2['pkg_dependencies'] += ((
+                _misc.get_test_package_atom(),
+                etpConst['dependency_type_ids']['rdepend_id']),)
 
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
 
         idpackage2 = self.test_db.addPackage(data2)
         db_data2 = self.test_db.getPackageData(idpackage2)
-        del db_data2['original_repository']
-        del db_data2['extra_download']
+
+        _misc.clean_pkg_metadata(data2)
+        _misc.clean_pkg_metadata(db_data2)
         self.assertEqual(data2, db_data2)
 
         rev_deps = self.test_db.retrieveReverseDependencies(idpackage)
@@ -733,8 +763,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
         out = self.test_db.searchSimilarPackages(_misc.get_test_package_name())
         self.assertEqual(out, (1,))
@@ -744,9 +775,11 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
+
         out = self.test_db.searchPackages(_misc.get_test_package_name())
         self.assertEqual(out, (('sys-libs/zlib-1.2.3-r1', 1, '5'),))
         out = self.test_db.searchPackages(_misc.get_test_package_name(),
@@ -814,9 +847,11 @@ class EntropyRepositoryTest(unittest.TestCase):
         data = self.Spm.extract_package_metadata(test_pkg)
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(db_data, data)
+
         out = self.test_db.searchName(_misc.get_test_package_name())
         self.assertEqual(out, frozenset([('sys-libs/zlib-1.2.3-r1', 1)]))
 
@@ -838,8 +873,9 @@ class EntropyRepositoryTest(unittest.TestCase):
         }
         idpackage = self.test_db.addPackage(data)
         db_data = self.test_db.getPackageData(idpackage)
-        del db_data['original_repository']
-        del db_data['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(db_data)
         self.assertEqual(data, db_data)
 
         set_mute(True)
@@ -857,8 +893,8 @@ class EntropyRepositoryTest(unittest.TestCase):
         self.test_db.importRepository(buf_file, new_db_path)
         new_db = self.Client.open_generic_repository(new_db_path)
         new_db_data = new_db.getPackageData(idpackage)
-        del new_db_data['original_repository']
-        del new_db_data['extra_download']
+
+        _misc.clean_pkg_metadata(new_db_data)
         new_db.close()
         set_mute(True)
         self.assertEqual(new_db_data, db_data)
@@ -983,5 +1019,4 @@ class EntropyRepositoryTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    entropy.tools.kill_threads()
     raise SystemExit(0)

@@ -2666,6 +2666,8 @@ def read_elf_dynamic_libraries(elf_file):
 
     outcome = set()
     if out is not None:
+        if const_is_python3():
+            out = const_convert_to_unicode(out)
         for line in out.split("\n"):
             if line:
                 libs = line.strip().split(" ", -1)[0].split(",")
@@ -2713,10 +2715,13 @@ def read_elf_real_dynamic_libraries(elf_file):
 
     outcome = set()
     if out is not None:
+        if const_is_python3():
+            out = const_convert_to_unicode(out)
         for line in out.split("\n"):
+            if line == elf_file:
+                continue
             if line:
                 outcome.add(os.path.basename(line))
-    outcome.discard(elf_file)
 
     return outcome
 
@@ -2741,11 +2746,13 @@ def read_elf_broken_symbols(elf_file):
         if exit_st != 0:
             raise FileNotFound("ldd error")
 
-        out = ""
+        out = const_convert_to_unicode("")
         while True:
             # make sure that stdout is flushed and won't block
             proc.stdout.read()
             tout = proc.stderr.read()
+            if const_is_python3():
+                tout = const_convert_to_unicode(tout)
             out += tout
             if not tout:
                 break
@@ -2803,6 +2810,8 @@ def read_elf_linker_paths(elf_file):
     if out is not None:
 
         elf_dir = os.path.dirname(elf_file)
+        if const_is_python3():
+            out = const_convert_to_unicode(out)
         for line in out.split("\n"):
             if line:
                 paths = line.strip().split(" ", -1)[0].split(",")
@@ -3195,7 +3204,7 @@ def acquire_entropy_locks(entropy_client, blocking = False,
     other writeable destinations.
     Can be unlocked by simply calling release_entropy_locks().
 
-    @param entropy_client: any Entropy Client based instance
+    @param entropy_client: any Entropy Client based class
     @type entropy_client: entropy.client.interfaces.Client
     @keyword blocking: acquire locks in blocking mode?
     @type blocking: bool
@@ -3228,7 +3237,7 @@ def release_entropy_locks(entropy_client):
     """
     Release Entropy Client/Server file locks.
 
-    @param entropy_client: any Entropy Client based instance
+    @param entropy_client: any Entropy Client based class
     @type entropy_client: entropy.client.interfaces.Client
     """
     entropy_client.unlock_resources()

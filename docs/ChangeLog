@@ -1,3 +1,469 @@
+commit f28ab4f7027663827fdd13f8c98cd7757943786d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 17:49:22 2013 +0100
+
+    Release Entropy 247
+
+commit 7b0d41e50f174b67560d84ad7d17c98fcd780c04
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 15:57:45 2013 +0100
+
+    [Rigo] add "in:exact" command to allow users to match packages, use it for lts kernels
+    
+    Conflicts:
+    	rigo/rigo/ui/gtk3/controllers/applications.py
+
+commit 0184dac61733525b62b31e70b37f888020507d52
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 16:11:38 2013 +0100
+
+    [entropy.db.skel] fix matching of old style virtuals
+    
+    When only a subset of the packages in a given key, slot expose
+    an old style virtual dep string (like virtual/linux-binary-lts),
+    make sure not to pull in all of them instead.
+
+commit 454b1b61fae5be5f8f4d39c776abd522ecf7aac6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 09:20:52 2013 +0100
+
+    Tagging Entropy version 246
+
+commit d029f5568c916840c869d2972717c15914dc970c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 09:20:51 2013 +0100
+
+    Release Entropy 246
+
+commit 5c717701f7af8e0730755b1ad04b2d7003183702
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Dec 6 09:18:23 2013 +0100
+
+    [entropy.client.package.actions] fetch: pass metadata through _check_package_path_download
+    
+    This method is called in the setup phase, when self._meta is still None.
+
+commit 525bab67144934b0d0c96fda36818b1c5a24387b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 23:42:17 2013 +0100
+
+    Tagging Entropy version 245
+
+commit f85c890f9add76ba80550ffe99a00be69ca34c0c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 23:42:17 2013 +0100
+
+    Release Entropy 245
+
+commit 0bf9ab5d82afcf15c094aa6c9fe9a585bf437bc6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 23:19:17 2013 +0100
+
+    [Rigo] document the installed repository lazy load requirement
+
+commit a2e1e6ba94074067d404daf54c49e8782449e245
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 23:11:36 2013 +0100
+
+    [entropy.client] delay installed repository initialization as much as possible
+
+commit 78c47b65bcd13f48208ed087e74018f4dfff64c2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:25:29 2013 +0100
+
+    Tagging Entropy version 243
+
+commit addd11b19164da2e04ad55c9205d37f032d0a9b6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:25:29 2013 +0100
+
+    Release Entropy 243
+
+commit 81dca7339e8d64468d57ff863242bd8b5d04b21b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:19:21 2013 +0100
+
+    [eit.commands.command] use the Entropy class object to acquire the Entropy Resources Lock
+
+commit c26b8fb971be6a9d2bbb57fafb446c09e8beaf71
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:14:18 2013 +0100
+
+    [solo.commands.command] use the Entropy class object to acquire the Entropy Resources Lock
+
+commit 9c7fdd5410596246fcd542f9f0e7ee4238171d53
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:12:25 2013 +0100
+
+    [entropy.tools] update docstrings for Entropy Resources Lock methods
+
+commit b21eeaf4d2e5dd21857c0c1f4c56cd7db48ad64f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 22:05:35 2013 +0100
+
+    [entropy.client.methods] make Entropy Resources Lock methods classmethods
+
+commit 82b85704ce530fa0849b07891bb40517eadd5d82
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 21:36:30 2013 +0100
+
+    [entropy.output] make TextInterface methods classmethods
+    
+    This makes possible to fix a circular dependency in the Entropy
+    Resources Lock management methods
+
+commit 391ed26f4fa7a0e2995d9a431b635d9a1806351a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 16:34:16 2013 +0100
+
+    Tagging Entropy version 242
+
+commit 4d20097e97abc543ccf92e7f01cc8e47ec76c2b7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 16:34:16 2013 +0100
+
+    Release Entropy 242
+
+commit 8846e063aeaef263eb8454c79e3874de25d734f2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 16:33:41 2013 +0100
+
+    [entropy.db.sqlite] add preserved_libs related methods for backward schema compat
+
+commit 87a3b0d73f26ca7c71eebc634158ab89ced20a42
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 16:23:56 2013 +0100
+
+    Tagging Entropy version 241
+
+commit c6aced2bdc29df07a8f4b193512028340ba556b3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Dec 5 16:23:55 2013 +0100
+
+    Release Entropy 241
+
+commit 255b9f7d36c580d84efa20e74491e54432923d39
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Dec 4 17:44:25 2013 +0100
+
+    Tagging Entropy version 240
+
+commit 755c751d40e3ef9df55bb24a94363ec9e16d523b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Dec 4 17:44:24 2013 +0100
+
+    Release Entropy 240
+
+commit 43992dd452cc55803c6e1f5a1b626a2d6c3023b0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Dec 4 17:43:44 2013 +0100
+
+    [entropy.client.package.actions] install: fix entropy_install_unpack_hook() in case of smart packages
+
+commit cedee6a35ca2efbf5d5a59e95944f242d9e0f1b8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Dec 4 17:38:56 2013 +0100
+
+    [entropy.client.package.actions] install: use the correct package_id
+
+commit 32027b244968367122e46699d4392610cbf030ab
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Dec 1 16:33:58 2013 +0100
+
+    [entropy.spm] fix vdb handling wrt locking, fix several potential races
+
+commit b70ceca1cee3146ef2e3264caaf90fe10c9d5f28
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 12:18:39 2013 +0100
+
+    [entropy.db.sqlite] drop retrieveSignatures
+    
+    This is no longer needed here since support for the old schema
+    has been dropped (the schema update code will update the tables
+    anyway)
+
+commit ec3d091c22eece10674aaa73946ae517a0837c83
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 12:16:06 2013 +0100
+
+    [entropy.db.sqlite] drop retrieveProvide and searchProvidedVirtualPackage
+    
+    They are no longer needed since compatibility with the old metadata
+    has been dropped.
+
+commit c8c20f03aa96e424806d823639a0f865872c83db
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 12:04:05 2013 +0100
+
+    [entropy.db] drop support for deprecated eclasses and messages metadata
+
+commit c199b6839f8262c372ef1b3366ad570f95f32143
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 12:02:07 2013 +0100
+
+    [entropy.db] remove support for deprecated provide metadata
+
+commit a54f5b36bc61ad5a94f1223a5a79eaa679e5b096
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 11:51:06 2013 +0100
+
+    [entropy.db] drop 'dependencies' metadata support completely
+
+commit a42711086b4825dbad61b7ca66976c166586278d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 11:23:40 2013 +0100
+
+    [tests] tools: mute output
+
+commit cd6d6b9d22df14345db171982d2162949ce5524d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 10:54:13 2013 +0100
+
+    [tests] use const_mkdtemp() instead of tempfile.mkdtemp()
+
+commit ac1548207d48022f831c66444888f109319d64c1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 10:53:42 2013 +0100
+
+    [entropy.tools] restore python3 compatibility on newly tested functions
+
+commit 3a05acd16a079f5b415b47284e3ca857d0d43ffc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Nov 30 08:25:30 2013 +0100
+
+    [tests] spm: use const_mkdtemp() instead of tempfile.mkdtemp
+
+commit d3cfd35bf528f4ed4e44d7f305b799234cea4046
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 21:49:42 2013 +0100
+
+    [entropy.client.package] reopen the installed packages repository to trigger schema updates
+
+commit cf16a4e11ee1f8a246dfe5c9a8acab58c61e024f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 20:01:22 2013 +0100
+
+    Tagging Entropy version 239
+
+commit 4d9397c140c6e2f4c2763bbda2fe371cd22a48dc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 20:01:22 2013 +0100
+
+    Release Entropy 239
+
+commit 38810e2c83e5cd8bb460e92409b2f173530e8386
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 20:00:36 2013 +0100
+
+    [entropy.spm] PortagePlugin: drop dependencies metadata compatibility
+
+commit a5761e0302b50b7dbb5d0040a4c0c703fbed3891
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:57:01 2013 +0100
+
+    [entropy.server.db] migrate to pkg_dependencies
+
+commit c9809f077512985a92fa8d46bba5a9ac6ca0ffd2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:56:20 2013 +0100
+
+    [entropy.server] migrate to pkg_dependencies metadata
+
+commit 5c120efb6134de3a70413db60f4e8731268c2358
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:43:21 2013 +0100
+
+    Tagging Entropy version 238
+
+commit d10d82bebb0ffd5397d98e557eddee1c495deaf4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:43:21 2013 +0100
+
+    Release Entropy 238
+
+commit a01f0bd1038bc1f945cccef916e4f37cf7f507a6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:41:08 2013 +0100
+
+    [tests] mute QA and Security test function outputs
+
+commit 982d99fe30522514b211b0cced99446536e6c326
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:37:24 2013 +0100
+
+    [tests] client: silence tests
+
+commit 464ae46d90ede34374bf83355ca949af2b39c079
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:29:12 2013 +0100
+
+    [tests] drop debug output
+
+commit e6d0a556b7183e01ca83577a745a7cd70b45d03c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:21:17 2013 +0100
+
+    [entropy.spm] PortagePlugin.__source_env_get_var: silence stderr
+
+commit e406a4edaa1c8e2fbe822f0966931d28a9ba11a0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 19:15:44 2013 +0100
+
+    [entropy.*] create new dependencies metadata "pkg_dependencies"
+    
+    The old "dependencies" metadata is deprecated. It was found that
+    the generated metadata might get corrupted by colliding atom strings.
+    The new implementation avoids collisions completely and is more
+    efficient.
+
+commit 48794603d09c01796aa6f35872f73a1aad57e13d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 17:38:27 2013 +0100
+
+    [entropy.spm] PortagePlugin: make sure that /usr/lib/portage/pym is in sys.path
+
+commit 79885e0e0f11952eeef96cb0fe0a5be84a7ae9e4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 17:38:09 2013 +0100
+
+    [entropy.client.interfaces.dep] restore python3 compatibility
+
+commit 078c24de3b73dd4379ab1fe2ee1b6c9fd4ec0662
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 16:42:31 2013 +0100
+
+    Tagging Entropy version 237
+
+commit d28fd6050fcc5220c3f1b73d4e77bff9bb18f0a5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 16:42:30 2013 +0100
+
+    Release Entropy 237
+
+commit 57d22348ea5e5bf8eec78c3eedeea227ebb6fac8
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 16:41:21 2013 +0100
+
+    [entropy.qa] _get_unresolved_sonames: try to resolve the lib using its real path
+
+commit 2b082167cd5c360aa2ff332d6f8e772c866b15d2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 16:30:23 2013 +0100
+
+    [entropy.tools] read_elf_real_dynamic_libraries: correctly filter out elf_file
+
+commit 32e48aa576fb6bd53d94da96b45bde821a66cad6
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 16:24:25 2013 +0100
+
+    [entropy.qa] rewrite _get_unresolved_sonames: reduce false positives
+    
+    Use the provided libraries metadata instead of the content metadata,
+    which may be really large and error prone. Improve speed and memory
+    usage as well.
+
+commit 53ef2c06bd51cd80b2a05efb3ddee80a8a4e6339
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 15:54:05 2013 +0100
+
+    [entropy.qa] _get_unresolved_sonames: filter symlinks from elf_files
+
+commit aab2449b2b00535dab9ae65aa3ecadaaa8b0f51f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 15:50:49 2013 +0100
+
+    [entropy.qa] _is_elf_executable_or_library: add allow_symlink keyword arg
+
+commit ed6e58551d71e2122ead06e8f419c3efe46f4b7b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 15:40:52 2013 +0100
+
+    [entropy.qa] move ELF file checks to separate unified function, add debug dir check
+
+commit 734fe7a0f92d056ce4a6633cbf63ad29cee05d18
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 13:10:10 2013 +0100
+
+    [entropy.client.interfaces.sets] fix undefined variable: err
+
+commit b08389db21045c92bed51040b08ac1974822e90e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 13:09:01 2013 +0100
+
+    Tagging Entropy version 236
+
+commit 46cbde0a878d22c57cfb6e7381b6f5cbc4061b61
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 13:09:01 2013 +0100
+
+    Release Entropy 236
+
+commit b7292eadf133091ce169e5f5b3fee21e1d5f6d9c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 13:08:28 2013 +0100
+
+    [entropy.fetchers] do not print "Infinity" but rather warn about the accuracy
+
+commit a5910790a607f34b7b5c692be8a7ae8271a5722a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 13:08:07 2013 +0100
+
+    [entropy.fetchers] clean code a bit
+
+commit 6f8164dd14017e73e91cb46584dc710f14d0da88
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 12:55:26 2013 +0100
+
+    [entropy.client.package] fix regression in .edelta files download support
+
+commit 7fc8ad14adbff7d205f2fa0989b3404990cb3f81
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 11:57:57 2013 +0100
+
+    [RigoDaemon] add debug output on _authorize callback method
+
+commit 3d1c79c299dc007983edf0d0640b67c82af8322e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 11:37:42 2013 +0100
+
+    [Rigo] update translations
+
+commit 0ce468721227b15af6228ece5fdbcee11914dc6a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 11:37:15 2013 +0100
+
+    [Rigo] update rigo.pot
+
+commit f68ddef4ae5007e7174f34bfb5e64ee66e135c81
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 11:36:47 2013 +0100
+
+    [Rigo] add support for basic preserved libraries notification
+
+commit ae9707d39e9dac17193379248bd1984a59073719
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 11:05:15 2013 +0100
+
+    [Rigo] make possible to toggle the VteTerminal scroll-on-output mode
+
+commit 04048b88186456c34da3e90b66865d682063721a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Nov 29 10:48:50 2013 +0100
+
+    [RigoDaemon] signal preserved libraries through preserved_libraries_available()
+
+commit 52791086d589fb5d28ee1627607a07e26997ed1a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 28 21:03:31 2013 +0100
+
+    [Rigo] derive Shape from object, avoid python warning
+
+commit 6848c9cda0ae9df3a9a5803c0f37ebcde566a95c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Nov 28 20:19:05 2013 +0100
+
+    Tagging Entropy version 235
+
 commit b21654e7053b0bf8f7689397d21bfc616aa64484
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Thu Nov 28 20:19:05 2013 +0100

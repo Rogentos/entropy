@@ -4,7 +4,7 @@ sys.path.insert(0, '.')
 sys.path.insert(0, '../')
 import unittest
 import entropy.qa
-from entropy.output import TextInterface
+from entropy.output import TextInterface, set_mute
 import entropy.tools
 import tests._misc as _misc
 import tempfile
@@ -12,17 +12,8 @@ import tempfile
 class QATest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         text = TextInterface()
         self.QA = entropy.qa.QAInterface()
-
-    def tearDown(self):
-        """
-        tearDown is run after each test
-        """
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
 
     def test_package_qa(self):
         pkgs = [_misc.get_test_entropy_package4(),
@@ -30,10 +21,11 @@ class QATest(unittest.TestCase):
             _misc.get_test_entropy_package2(),
             _misc.get_test_entropy_package()
         ]
+        set_mute(True)
         for pkg in pkgs:
             self.assertTrue(self.QA.entropy_package_checks(pkg))
+        set_mute(False)
 
 if __name__ == '__main__':
     unittest.main()
-    entropy.tools.kill_threads()
     raise SystemExit(0)

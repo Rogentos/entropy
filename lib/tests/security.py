@@ -6,9 +6,9 @@ sys.path.insert(0, '.')
 sys.path.insert(0, '../')
 import os
 import unittest
-import tempfile
 import shutil
-from entropy.const import etpConst
+from entropy.const import etpConst, const_mkdtemp
+from entropy.output import set_mute
 from entropy.client.interfaces import Client
 from entropy.security import Repository, System
 import entropy.tools
@@ -20,23 +20,20 @@ class SecurityTest(unittest.TestCase):
         """
         NOTE: this requires gnupg as test-dependency.
         """
-        self._tmp_dir = tempfile.mkdtemp()
+        self._tmp_dir = const_mkdtemp()
         self._entropy = Client(installed_repo = False)
         self._repository = Repository(keystore_dir = self._tmp_dir)
 
         tmp_dir = os.getenv("TMPDIR", os.getcwd())
-        self._security_cache_dir = tempfile.mkdtemp(
+        self._security_cache_dir = const_mkdtemp(
             dir=tmp_dir, prefix="entropy.SecurityTest")
-        self._security_dir = tempfile.mkdtemp(
+        self._security_dir = const_mkdtemp(
             dir=tmp_dir, prefix="entropy.SecurityTest")
         System.SECURITY_DIR = self._security_dir
         System._CACHE_DIR = self._security_cache_dir
         System.SECURITY_URL = "file://" + _misc.get_security_pkg()
         self._system = System(self._entropy)
         # set fake security url
-
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
 
     def tearDown(self):
         """
@@ -54,8 +51,6 @@ class SecurityTest(unittest.TestCase):
         shutil.rmtree(self._tmp_dir, True)
         shutil.rmtree(self._security_dir, True)
         shutil.rmtree(self._security_cache_dir, True)
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
 
     def test_security_get_advisories_cache(self):
         self.assertEqual(self._system.get_advisories_cache(), None)
@@ -83,7 +78,9 @@ class SecurityTest(unittest.TestCase):
         self.assertEqual(meta, {})
 
     def test_security_fetch_advisories(self):
+        set_mute(True)
         s_rc = self._system.sync()
+        set_mute(False)
         self.assertEqual(s_rc, 0)
         self.assertEqual(self._system.check_advisories_availability(), True)
 
@@ -131,5 +128,4 @@ class SecurityTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    entropy.tools.kill_threads()
     raise SystemExit(0)

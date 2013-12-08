@@ -18,6 +18,7 @@
     exceptions (errors) submission.
 
 """
+import collections
 import errno
 import os
 import sys
@@ -792,20 +793,8 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
             def _is_elf(item):
                 filepath = os.path.join(currentdir, item)
-                try:
-                    st = os.stat(filepath)
-                except (OSError, IOError):
-                    return None
-
-                if not stat.S_ISREG(st.st_mode):
-                    return None
-                # shared libraries must be always executable
-                if not (stat.S_IMODE(st.st_mode) & stat.S_IXUSR):
-                    return None
-
-                if not entropy.tools.is_elf_file(filepath):
-                    return None
-                return filepath[sys_root_len:]
+                if self._is_elf_executable_or_library(filepath):
+                    return filepath[sys_root_len:]
 
             return (x for x in map(_is_elf, files) if x is not None)
 
@@ -925,7 +914,7 @@ class QAInterface(TextInterface, EntropyPluginStore):
                         my_real_exec_dir = os.path.dirname(real_exec_path)
                         mylib_guess = os.path.join(my_real_exec_dir, mylib)
                         try:
-                            if entropy.tools.is_elf_file(mylib_guess):
+                            if self._is_elf_executable_or_library(mylib_guess):
                                 # we have found the missing library,
                                 # which wasn't in LDPATH, booooo @ package
                                 # developers !! boooo!
@@ -1065,9 +1054,7 @@ class QAInterface(TextInterface, EntropyPluginStore):
         mylibs = {}
         for myfile in mycontent:
             myfile = const_convert_to_rawstring(myfile)
-            if not const_file_readable(myfile):
-                continue
-            if not entropy.tools.is_elf_file(myfile):
+            if not self._is_elf_executable_or_library(myfile):
                 continue
             mylibs[myfile] = entropy.tools.read_elf_dynamic_libraries(
                 myfile)
@@ -1087,6 +1074,50 @@ class QAInterface(TextInterface, EntropyPluginStore):
                 broken_libs[mylib].add(myneeded)
 
         return broken_libs
+
+    def _is_elf_executable_or_library(self, path, allow_symlink = True):
+        """
+        Determine whether a path is a valid ELF executable or ELF library.
+
+        @param path: path to test
+        @type path: string
+        @keyword allow_symlink: True, if you accept symlinks
+        @type allow_symlink: bool
+        @return: True, if yes
+        @rtype: bool
+        """
+        if not const_is_python3():
+            path = const_convert_to_rawstring(path)
+
+        try:
+            st = os.stat(path)
+        except (OSError, IOError):
+            return False
+
+        # is it a regular file?
+        if not stat.S_ISREG(st.st_mode):
+            return False
+
+        if not allow_symlink:
+            if stat.S_ISLNK(st.st_mode):
+                return False
+
+        # shared libraries must be always executable
+        if not (stat.S_IMODE(st.st_mode) & stat.S_IXUSR):
+            return False
+
+        # is it a debug file? skip them.
+        t_path = path
+        while t_path != os.path.sep:
+            if t_path in etpConst['splitdebug_dirs']:
+                return False
+            t_path = os.path.dirname(t_path)
+
+        # is this really an ELF object file?
+        if not entropy.tools.is_elf_file(path):
+            return False
+
+        return True
 
     def _get_unresolved_sonames(self, entropy_client, package_match,
         content_root = None):
@@ -1117,74 +1148,75 @@ class QAInterface(TextInterface, EntropyPluginStore):
         elif not content_root.endswith(os.path.sep):
             content_root += os.path.sep
 
-        def is_valid_elf(path):
-            if not os.path.lexists(path):
-                return False
-            if not os.path.isfile(path):
-                return False
-            if os.path.islink(path):
-                return False
-            if not const_file_readable(path):
-                return False
-            if not entropy.tools.is_elf_file(path):
-                return False
-            return True
+        dependencies = self.get_deep_dependency_list(entropy_client,
+            package_match, atoms = True)
 
         pkg_matches = set()
-        package_id, repo_id = package_match
-        entropy_repository = entropy_client.open_repository(repo_id)
-
-        for dependency in entropy_repository.retrieveRuntimeDependencies(
-            package_id):
+        for dependency in dependencies:
             match_pkg_id, match_repo_id = entropy_client.atom_match(dependency)
             if match_pkg_id == -1:
                 continue
             pkg_matches.add((match_pkg_id, match_repo_id))
 
-        all_content = set()
-        for pkg_id, pkg_repo in pkg_matches:
-            pkg_dbconn = entropy_client.open_repository(pkg_repo)
-            all_content |= pkg_dbconn.retrieveContent(pkg_id)
+        provided_libs_set = set()
+        package_id, repository_id = package_match
+        entropy_repository = entropy_client.open_repository(repository_id)
 
-        package_content = entropy_repository.retrieveContent(package_id)
-        all_content |= package_content
+        for lib, path, elfclass in entropy_repository.retrieveProvidedLibraries(
+            package_id):
+            provided_libs_set.add(path)
+
+        for pkg_id, pkg_repo in pkg_matches:
+            repo = entropy_client.open_repository(pkg_repo)
+            for lib, path, elfclass in repo.retrieveProvidedLibraries(pkg_id):
+                provided_libs_set.add(path)
+
+        elf_files = collections.deque()
+        for path, ftype in entropy_repository.retrieveContentIter(package_id):
+            real_path = content_root + path
+            if self._is_elf_executable_or_library(
+                real_path, allow_symlink = False):
+                elf_files.append(real_path)
 
         resolve_cache = {}
         unresolved_sonames = {}
-        content = [os.path.normpath(content_root + x) for x in package_content]
-        content_dirs = set((x for x in content if os.path.isdir(x)))
-        elf_files = filter(is_valid_elf, content)
-
-        def soname_in_package_content(soname):
-            for content_dir in content_dirs:
-                if is_valid_elf(os.path.join(content_dir, soname)):
-                    return True
-            return False
 
         for elf_file in elf_files:
             sonames = entropy.tools.read_elf_real_dynamic_libraries(elf_file)
+
             for soname in sonames:
                 resolved_soname_path = resolve_cache.setdefault(soname,
                     entropy.tools.resolve_dynamic_library(soname, elf_file))
+
                 if resolved_soname_path is None:
                     # library not found on system
                     # maybe it's into our package?
-                    if not soname_in_package_content(soname):
-                        obj = unresolved_sonames.setdefault(elf_file, set())
-                        obj.add(soname)
-                else:
+                    obj = unresolved_sonames.setdefault(elf_file, set())
+                    obj.add(soname)
+                    continue
 
-                    # fixup library dir, multilib systems
-                    real_dir = os.path.realpath(os.path.dirname(
-                        resolved_soname_path))
-                    resolved_soname_path = os.path.join(real_dir,
-                        os.path.basename(resolved_soname_path))
+                if resolved_soname_path in provided_libs_set:
+                    # the soname path resolves to a provided library
+                    continue
 
-                    # library found on system, need to check if it's in our
-                    # package dependencies, "all_content"
-                    if resolved_soname_path not in all_content:
-                        obj = unresolved_sonames.setdefault(elf_file, set())
-                        obj.add(soname)
+                # try with the complete real path
+                # (libGL.so.1 -> /usr/lib64/opengl/...)
+                if os.path.realpath(resolved_soname_path) in provided_libs_set:
+                    # the real soname path resolves to a provided library
+                    continue
+
+                # fixup library dir, multilib systems
+                real_dir = os.path.realpath(os.path.dirname(
+                    resolved_soname_path))
+                multilib_resolved_soname_path = os.path.join(real_dir,
+                    os.path.basename(resolved_soname_path))
+
+                if multilib_resolved_soname_path in provided_libs_set:
+                    # soname library found, phew!
+                    continue
+
+                obj = unresolved_sonames.setdefault(elf_file, set())
+                obj.add(soname)
 
         return unresolved_sonames
 

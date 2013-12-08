@@ -17,8 +17,6 @@ import tests._misc as _misc
 class EntropyRepositoryTest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         self.default_repo = "foo"
         etpConst['defaultserverrepositoryid'] = self.default_repo
         etpConst['uid'] = 0
@@ -36,8 +34,6 @@ class EntropyRepositoryTest(unittest.TestCase):
         tearDown is run after each test
         """
         self.Server.remove_repository(self.default_repo)
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
         # calling destroy() and shutdown()
         # need to call destroy() directly to remove all the SystemSettings
         # plugins because shutdown() doesn't, since it's meant to be called
@@ -87,9 +83,11 @@ class EntropyRepositoryTest(unittest.TestCase):
         self.assertNotEqual(data['revision'], data2['revision'])
         data.pop('revision')
         data2.pop('revision')
-        del data2['original_repository']
-        del data2['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(data2)
         self.assertEqual(data, data2)
+
         self.assertEqual(idpackage, 1)
         self.assertEqual(idpackage2, 2)
         self.assertEqual(rev, 0)
@@ -107,9 +105,11 @@ class EntropyRepositoryTest(unittest.TestCase):
         idpackage2 = test_db.handlePackage(data)
         rev2 = test_db.retrieveRevision(idpackage2)
         data2 = test_db.getPackageData(idpackage2)
-        del data2['original_repository']
-        del data2['extra_download']
+
+        _misc.clean_pkg_metadata(data)
+        _misc.clean_pkg_metadata(data2)
         self.assertEqual(data, data2)
+
         self.assertEqual(idpackage, 1)
         self.assertEqual(idpackage2, 2)
         self.assertEqual(rev, 0)
@@ -165,5 +165,4 @@ class EntropyRepositoryTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    entropy.tools.kill_threads()
     raise SystemExit(0)

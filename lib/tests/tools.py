@@ -7,7 +7,7 @@ import unittest
 from entropy.const import const_convert_to_rawstring, const_convert_to_unicode
 import entropy.tools as et
 from entropy.client.interfaces import Client
-from entropy.output import print_generic
+from entropy.output import print_generic, set_mute
 import tests._misc as _misc
 import tempfile
 import subprocess
@@ -17,19 +17,10 @@ import stat
 class ToolsTest(unittest.TestCase):
 
     def setUp(self):
-        sys.stdout.write("%s called\n" % (self,))
-        sys.stdout.flush()
         self.test_pkg = _misc.get_test_entropy_package()
         self.test_pkg2 = _misc.get_test_entropy_package2()
         self.test_pkg3 = _misc.get_test_entropy_package3()
         self.test_pkgs = [self.test_pkg, self.test_pkg2, self.test_pkg3]
-
-    def tearDown(self):
-        """
-        tearDown is run after each test
-        """
-        sys.stdout.write("%s ran\n" % (self,))
-        sys.stdout.flush()
 
     def test_dump_entropy_metadata(self):
 
@@ -40,7 +31,9 @@ class ToolsTest(unittest.TestCase):
         for test_pkg in self.test_pkgs:
             et.dump_entropy_metadata(test_pkg, tmp_path)
             self.assertNotEqual(tmp_path, None)
+            set_mute(True)
             dbconn = client.open_generic_repository(tmp_path)
+            set_mute(False)
             dbconn.validate()
             dbconn.integrity_check()
             dbconn.listAllPackageIds()
@@ -477,7 +470,7 @@ class ToolsTest(unittest.TestCase):
              'ld-linux-x86-64.so.2', 'libkrb5support.so.0',
              'libpthread.so.0', 'libgssrpc.so.4',
              'libgssapi_krb5.so.2', 'libdl.so.2',
-             'libk5crypto.so.3', 'libc.so.6', 'libkdb5.so.4.0']
+             'libk5crypto.so.3', 'libc.so.6']
         )
         metadata = et.read_elf_real_dynamic_libraries(elf_obj)
         self.assertEqual(metadata, known_meta)
@@ -647,5 +640,4 @@ class ToolsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    et.kill_threads()
     raise SystemExit(0)

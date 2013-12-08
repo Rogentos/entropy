@@ -722,6 +722,32 @@ class EntropySQLiteRepository(EntropySQLRepository):
             super(EntropySQLiteRepository, self)._insertExtraDownload(
                 package_id, package_downloads_data)
 
+    def listAllPreservedLibraries(self):
+        """
+        Reimplemented from EntropySQLRepository.
+        """
+        try:
+            return super(EntropySQLiteRepository,
+                         self).listAllPreservedLibraries()
+        except OperationalError:
+            # TODO: backward compatibility, remove after 2014
+            if self._doesTableExist("preserved_libs"):
+                raise
+            return tuple()
+
+    def retrievePreservedLibraries(self, library, elfclass):
+        """
+        Reimplemented from EntropySQLRepository.
+        """
+        try:
+            return super(EntropySQLiteRepository,
+                         self).retrievePreservedLibraries(library, elfclass)
+        except OperationalError:
+            # TODO: backward compatibility, remove after 2014
+            if self._doesTableExist("preserved_libs"):
+                raise
+            return tuple()
+
     def _bindSpmPackageUid(self, package_id, spm_package_uid, branch):
         """
         Reimplemented from EntropySQLRepository.
@@ -926,30 +952,6 @@ class EntropySQLiteRepository(EntropySQLRepository):
         obj = cached.get(package_id)
         del cached
         return obj
-
-    def retrieveSignatures(self, package_id):
-        """
-        Reimplemented from EntropySQLRepository.
-        We must handle backward compatibility.
-        """
-        try:
-            return super(EntropySQLiteRepository,
-                         self).retrieveSignatures(
-                package_id)
-        except OperationalError:
-            data = None
-            if self._doesTableExist("packagesignatures"):
-                # TODO: drop after 2013?
-                cur = self._cursor().execute("""
-                SELECT sha1, sha256, sha512 FROM packagesignatures
-                WHERE idpackage = (?) LIMIT 1
-                """, (package_id,))
-                data = cur.fetchone()
-                if data:
-                    data = data + (None,)
-            if data:
-                return data
-            return None, None, None, None
 
     def retrieveExtraDownload(self, package_id, down_type = None):
         """
@@ -1198,23 +1200,6 @@ class EntropySQLiteRepository(EntropySQLRepository):
             if self._doesTableExist("provided_mime"):
                 raise
             return frozenset()
-
-    def retrieveProvide(self, package_id):
-        """
-        Reimplemented from EntropySQLRepository.
-        We must handle backward compatibility.
-        """
-        try:
-            return super(EntropySQLiteRepository,
-                  self).retrieveProvide(package_id)
-        except OperationalError as err:
-            # TODO: remove after 2013?
-            if self._doesColumnInTableExist("provide", "is_default"):
-                raise
-            cur = self._cursor().execute("""
-            SELECT atom, 0 FROM provide WHERE idpackage = (?)
-            """, (package_id,))
-            return frozenset(cur)
 
     def retrieveContentSafety(self, package_id):
         """
@@ -1472,25 +1457,6 @@ class EntropySQLiteRepository(EntropySQLRepository):
             if self._doesTableExist("provided_mime"):
                 raise
             return tuple()
-
-    def searchProvidedVirtualPackage(self, keyword):
-        """
-        Reimplemented from EntropySQLRepository.
-        We must handle backward compatibility.
-        """
-        try:
-            return super(EntropySQLiteRepository,
-                         self).searchProvidedVirtualPackage(keyword)
-        except OperationalError as err:
-            # TODO: remove this after 2012?
-            if self._doesColumnInTableExist("provide", "is_default"):
-                # something is really wrong
-                raise
-            cur = self._cursor().execute("""
-            SELECT baseinfo.idpackage, 0 FROM baseinfo,provide
-            WHERE provide.atom = (?) AND
-            provide.idpackage = baseinfo.idpackage""", (keyword,))
-            return tuple(cur)
 
     def searchCategory(self, keyword, like = False, just_id = True):
         """
@@ -1949,20 +1915,8 @@ class EntropySQLiteRepository(EntropySQLRepository):
             do_update_hash(m, cur)
 
         if include_signatures:
-            try:
-                # be optimistic and delay if condition,
-                # _doesColumnInTableExist
-                # is really slow
-                cur = self._cursor().execute("""
+            cur = self._cursor().execute("""
                 SELECT idpackage, sha1, gpg FROM
-                packagesignatures %s""" % (package_id_order,))
-            except OperationalError as err:
-                # TODO: remove this before 31-12-2011
-                if self._doesColumnInTableExist(
-                    "packagesignatures", "gpg"):
-                    raise
-                cur = self._cursor().execute("""
-                SELECT idpackage, sha1 FROM
                 packagesignatures %s""" % (package_id_order,))
 
             do_update_hash(m, cur)
