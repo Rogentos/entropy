@@ -18,7 +18,8 @@ import threading
 
 from entropy.const import etpConst, const_debug_write, \
     const_debug_enabled, const_isunicode, const_convert_to_unicode, \
-    const_get_buffer, const_convert_to_rawstring, const_is_python3
+    const_get_buffer, const_convert_to_rawstring, const_is_python3, \
+    const_get_stringtype
 from entropy.exceptions import SystemDatabaseError, SPMError
 from entropy.spm.plugins.factory import get_default_instance as get_spm
 from entropy.output import bold, red
@@ -619,7 +620,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
     GENERIC_NAME = "__generic__"
 
     def __init__(self, db, read_only, skip_checks, indexing,
-                 xcache, temporary, name):
+                 xcache, temporary, name, direct=False):
         # connection and cursor automatic cleanup support
         self._cleanup_monitor_cache_mutex = threading.Lock()
         self._cleanup_monitor_cache = {}
@@ -637,7 +638,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
         self._live_cacher = EntropyRepositoryCacher()
 
         EntropyRepositoryBase.__init__(self, read_only, xcache,
-                                       temporary, name)
+                                       temporary, name, direct=direct)
 
     def _cursor_connection_pool_key(self):
         """
@@ -1684,12 +1685,14 @@ class EntropySQLRepository(EntropyRepositoryBase):
 
         def insert_list():
             deps = []
+
             for dep in depdata:
                 deptype = 0
-                if isinstance(dep, tuple):
-                    dep, deptype = dep
-                elif isinstance(depdata, dict):
+
+                if isinstance(depdata, dict):
                     deptype = depdata[dep]
+                elif not isinstance(dep, const_get_stringtype()):
+                    dep, deptype = dep
 
                 iddep = self._isDependencyAvailable(dep)
                 if iddep == -1:

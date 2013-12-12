@@ -21,25 +21,8 @@ from entropy.exceptions import RepositoryError
 from entropy.cache import EntropyCacher
 from entropy.db.exceptions import OperationalError, DatabaseError
 
-REPO_LIST_CACHE_ID = 'repos/repolist'
 
 class CacheMixin:
-
-    def _validate_repositories_cache(self):
-        # is the list of repos changed?
-        cached = self._cacher.pop(REPO_LIST_CACHE_ID)
-        if cached != self._settings['repositories']['order']:
-            # invalidate matching cache
-            try:
-                self._settings._clear_repository_cache(repoid = None)
-            except IOError:
-                pass
-            self._store_repository_list_cache()
-
-    def _store_repository_list_cache(self):
-        self._cacher.push(REPO_LIST_CACHE_ID,
-            self._settings['repositories']['order'],
-            async = False)
 
     def clear_cache(self):
         """
@@ -51,8 +34,9 @@ class CacheMixin:
             # drop all the buffers then remove on-disk data
             self._cacher.discard()
             # clear repositories live cache
-            if self._installed_repository is not None:
-                self._installed_repository.clearCache()
+            inst_repo = self.installed_repository()
+            if inst_repo is not None:
+                inst_repo.clearCache()
             with self._repodb_cache_mutex:
                 for repo in self._repodb_cache.values():
                     repo.clearCache()
@@ -120,18 +104,6 @@ class CacheMixin:
         """
         return self.__repositories_hash(self._enabled_repos)
 
-    def _get_masked_packages_cache(self, chash):
-        """
-        Return the on-disk cached object for all the masked packages.
-
-        @param chash: cache hash
-        @type chash: string
-        @return: list of masked packages (if cache hit) otherwise None
-        @rtype: list or None
-        """
-        return self._cacher.pop("%s%s" % (
-            EntropyCacher.CACHE_IDS['world_masked'], chash))
-
     def _get_available_packages_cache(self, chash):
         """
         Return the on-disk cached object for all the available packages.
@@ -148,8 +120,7 @@ class CacheMixin:
         """
         Get available updates on-disk cache, if available, otherwise return None
         """
-        cl_id = self.sys_settings_client_plugin_id
-        misc_settings = self._settings[cl_id]['misc']
+        misc_settings = self.ClientSettings()['misc']
         ignore_spm_downgrades = misc_settings['ignore_spm_downgrades']
 
         if self.xcache:
@@ -191,8 +162,15 @@ class CacheMixin:
         repo_order = [x for x in self._settings['repositories']['order'] if
             x in enabled_repos]
 
-        c_hash = "%s|%s|%s|%s|%s|%s|v2" % (
-            repo_hash, empty_deps, enabled_repos,
+        inst_repo = self.installed_repository()
+
+        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|v3" % (
+            repo_hash,
+            empty_deps,
+            enabled_repos,
+            inst_repo.checksum(),
+            self._all_repositories_hash(),
+            ";".join(sorted(self._settings['repositories']['available'])),
             repo_order,
             ignore_spm_downgrades,
             # needed when users do bogus things like editing config files
@@ -200,8 +178,9 @@ class CacheMixin:
             self._settings['repositories']['branch'],
         )
         sha = hashlib.sha1()
-        sha.update(const_convert_to_rawstring(repr(c_hash)))
-        return "%s_%s" % (EntropyCacher.CACHE_IDS['world_update'],
+        sha.update(const_convert_to_rawstring(cache_s))
+        return "%s%s" % (
+            EntropyCacher.CACHE_IDS['world_update'],
             sha.hexdigest(),)
 
     def _get_critical_updates_cache(self, repo_hash = None):
@@ -212,7 +191,8 @@ class CacheMixin:
         if self.xcache:
             if repo_hash is None:
                 repo_hash = self._repositories_hash()
-            c_hash = "%s%s" % (EntropyCacher.CACHE_IDS['critical_update'],
+            c_hash = "%s%s" % (
+                EntropyCacher.CACHE_IDS['critical_update'],
                 self._get_critical_update_cache_hash(repo_hash),)
 
             return self._cacher.pop(c_hash)
@@ -222,11 +202,18 @@ class CacheMixin:
         Get critical package updates cache hash that can be used to retrieve
         the on-disk cached object.
         """
+        inst_repo = self.installed_repository()
+
         enabled_repos = self._filter_available_repositories()
         repo_order = [x for x in self._settings['repositories']['order'] if
             x in enabled_repos]
-        c_hash = "%s|%s|%s|%s" % (
-            repo_hash, enabled_repos,
+
+        c_hash = "%s|%s|%s|%s|%s|%s|%s|v2" % (
+            repo_hash,
+            enabled_repos,
+            inst_repo.checksum(),
+            self._all_repositories_hash(),
+            ";".join(sorted(self._settings['repositories']['available'])),
             repo_order,
             # needed when users do bogus things like editing config files
             # manually (branch setting)

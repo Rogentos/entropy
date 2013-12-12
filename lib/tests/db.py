@@ -5,10 +5,11 @@ sys.path.insert(0, '../')
 import unittest
 import os
 import time
-import tempfile
+import threading
+
 from entropy.client.interfaces import Client
 from entropy.const import etpConst, const_convert_to_unicode, \
-    const_convert_to_rawstring
+    const_convert_to_rawstring, const_mkstemp
 from entropy.output import set_mute
 from entropy.core.settings.base import SystemSettings
 from entropy.misc import ParallelTask
@@ -26,8 +27,6 @@ class EntropyRepositoryTest(unittest.TestCase):
             xcache = False, repo_validation = False)
         self.Spm = self.Client.Spm()
         self.test_db_name = "test_suite"
-        self.client_sysset_plugin_id = \
-            etpConst['system_settings_plugins_ids']['client_plugin']
         self.test_db = self.__open_test_db(":memory:")
         # GenericRepository supports package masking if this property is set
         self.test_db.enable_mask_filter = True
@@ -399,9 +398,8 @@ class EntropyRepositoryTest(unittest.TestCase):
             self.test_db.atomMatch(pkg_atom))
 
         # test package masking
-        plug_id = self.client_sysset_plugin_id
         masking_validation = \
-            self._settings[plug_id]['masking_validation']['cache']
+            self.Client.ClientSettings()['masking_validation']['cache']
         f_match_mask = (1, self.test_db_name,)
 
         self._settings['live_packagemasking']['mask_matches'].add(
@@ -464,9 +462,8 @@ class EntropyRepositoryTest(unittest.TestCase):
             self.test_db.atomMatch(pkg_atom))
 
         # test package masking
-        plug_id = self.client_sysset_plugin_id
-        masking_validation = \
-            self._settings[plug_id]['masking_validation']['cache']
+        masking_validation = self.Client.ClientSettings(
+            )['masking_validation']['cache']
         f_match_mask = (1, self.test_db_name,)
 
         self._settings['live_packagemasking']['mask_matches'].add(
@@ -503,9 +500,8 @@ class EntropyRepositoryTest(unittest.TestCase):
             self.test_db.atomMatch(pkg_atom))
 
         # test package masking
-        plug_id = self.client_sysset_plugin_id
-        masking_validation = \
-            self._settings[plug_id]['masking_validation']['cache']
+        masking_validation = self.Client.ClientSettings(
+            )['masking_validation']['cache']
         f_match_mask = (1, self.test_db_name,)
 
         self._settings['live_packagemasking']['mask_matches'].add(
@@ -551,9 +547,8 @@ class EntropyRepositoryTest(unittest.TestCase):
             self.test_db.atomMatch(pkg_atom))
 
         # test package masking
-        plug_id = self.client_sysset_plugin_id
-        masking_validation = \
-            self._settings[plug_id]['masking_validation']['cache']
+        masking_validation = self.Client.ClientSettings(
+            )['masking_validation']['cache']
         f_match_mask = (1, self.test_db_name,)
 
         self._settings['live_packagemasking']['mask_matches'].add(
@@ -647,7 +642,7 @@ class EntropyRepositoryTest(unittest.TestCase):
             _misc.clean_pkg_metadata(db_data)
             self.assertEqual(xdata, db_data)
             self.test_db.commit()
-            fd, buf_file = tempfile.mkstemp()
+            fd, buf_file = const_mkstemp()
             os.close(fd)
             buf = open(buf_file, "wb")
 
@@ -658,7 +653,7 @@ class EntropyRepositoryTest(unittest.TestCase):
             buf.flush()
             buf.close()
 
-            fd, buf_file_db = tempfile.mkstemp()
+            fd, buf_file_db = const_mkstemp()
             os.close(fd)
             self.test_db.importRepository(buf_file, buf_file_db)
             os.remove(buf_file)
@@ -881,14 +876,14 @@ class EntropyRepositoryTest(unittest.TestCase):
         set_mute(True)
 
         # export
-        fd, buf_file = tempfile.mkstemp()
+        fd, buf_file = const_mkstemp()
         os.close(fd)
         buf = open(buf_file, "wb")
         self.test_db.exportRepository(buf)
         buf.flush()
         buf.close()
 
-        fd, new_db_path = tempfile.mkstemp()
+        fd, new_db_path = const_mkstemp()
         os.close(fd)
         self.test_db.importRepository(buf_file, new_db_path)
         new_db = self.Client.open_generic_repository(new_db_path)
@@ -1015,6 +1010,155 @@ class EntropyRepositoryTest(unittest.TestCase):
 
         data = self.test_db.listAllPreservedLibraries()
         self.assertEqual(data, tuple())
+
+    def _test_repository_locking(self, test_db):
+
+        with test_db.shared():
+            self.assertRaises(RuntimeError, test_db.try_acquire_exclusive)
+
+        with test_db.exclusive():
+            opaque = test_db.try_acquire_shared()
+            self.assertNotEqual(opaque, None)
+            test_db.release_shared(opaque)
+
+        opaque_shared = test_db.try_acquire_shared()
+        self.assert_(opaque_shared is not None)
+
+        self.assertRaises(RuntimeError, test_db.try_acquire_exclusive)
+
+        test_db.release_shared(opaque_shared)
+
+        # test reentrancy
+        opaque_exclusive = test_db.try_acquire_exclusive()
+        self.assert_(opaque_exclusive is not None)
+
+        opaque_exclusive2 = test_db.try_acquire_exclusive()
+        self.assert_(opaque_exclusive2 is not None)
+
+        self.assert_(opaque_exclusive._lock_map is opaque_exclusive2._lock_map)
+
+        # test reference counting
+        self.assertEquals(
+            2,
+            opaque_exclusive._lock_map[test_db.lock_path()]['count'])
+
+        test_db.release_exclusive(opaque_exclusive)
+
+        self.assertEquals(
+            1,
+            opaque_exclusive._lock_map[test_db.lock_path()]['count'])
+
+        test_db.release_exclusive(opaque_exclusive2)
+
+        self.assertEquals(
+            0,
+            opaque_exclusive._lock_map[test_db.lock_path()]['count'])
+
+        # test that refcount doesn't go below zero
+        self.assertRaises(
+            RuntimeError, test_db.release_exclusive, opaque_exclusive)
+
+        self.assertEquals(
+            0,
+            opaque_exclusive._lock_map[test_db.lock_path()]['count'])
+
+        opaque_exclusive = test_db.try_acquire_exclusive()
+        self.assert_(opaque_exclusive is not None)
+
+        self.assertRaises(RuntimeError, test_db.release_shared,
+                          opaque_exclusive)
+
+        test_db.release_exclusive(opaque_exclusive)
+
+    def test_locking_file(self):
+
+        fd, db_file = const_mkstemp()
+        os.close(fd)
+        test_db = None
+
+        try:
+            test_db = self.Client.open_generic_repository(db_file)
+            test_db.initializeRepository()
+
+            return self._test_repository_locking(test_db)
+
+        finally:
+            if test_db is not None:
+                test_db.close()
+            os.remove(db_file)
+
+    def test_locking_memory(self):
+        self.assert_(self.test_db._is_memory())
+        return self._test_repository_locking(self.test_db)
+
+    def test_direct_access(self):
+        local = self.test_db._tls
+
+        self.assertEquals(self.test_db.directed(), False)
+
+        counter = getattr(local, "_EntropyRepositoryCacheCounter", "foo")
+        self.assertEquals(counter, "foo")
+
+        with self.test_db.direct():
+            self.assertEquals(self.test_db.directed(), True)
+
+        counter = local._EntropyRepositoryCacheCounter
+        self.assertEquals(counter, 0)
+
+        self.assertEquals(self.test_db.directed(), False)
+
+        with self.test_db.direct():
+
+            counter = local._EntropyRepositoryCacheCounter
+            self.assertEquals(counter, 1)
+
+            with self.test_db.direct():
+                counter = local._EntropyRepositoryCacheCounter
+                self.assertEquals(counter, 2)
+
+            counter = local._EntropyRepositoryCacheCounter
+            self.assertEquals(counter, 1)
+
+        counter = local._EntropyRepositoryCacheCounter
+        self.assertEquals(counter, 0)
+
+        self.test_db._direct_enabled = True
+        self.assertEquals(self.test_db.directed(), True)
+
+        self.test_db._direct_enabled = False
+        self.assertEquals(self.test_db.directed(), False)
+
+        with self.test_db.direct():
+            opaque = self.test_db.try_acquire_exclusive()
+            self.assertTrue(opaque is not None)
+            self.assertEquals(opaque.directed(), True)
+
+            opaque_shared = self.test_db.try_acquire_shared()
+            self.assertTrue(opaque_shared is not None)
+            self.assertEquals(opaque_shared.directed(), True)
+
+            opaque_exclusive = self.test_db.try_acquire_exclusive()
+            self.assertTrue(opaque_exclusive is not None)
+            self.assertEquals(opaque_exclusive.directed(), True)
+            self.assertEquals(self.test_db.directed(), True)
+
+            self.assertRaises(
+                RuntimeError,
+                self.test_db.release_shared, opaque_exclusive)
+            self.test_db.release_exclusive(opaque_exclusive)
+            self.assertEquals(self.test_db.directed(), True)
+
+            self.assertRaises(
+                RuntimeError,
+                self.test_db.release_exclusive, opaque_shared)
+            self.test_db.release_shared(opaque_shared)
+            self.assertEquals(self.test_db.directed(), True)
+
+            self.assertRaises(
+                RuntimeError,
+                self.test_db.release_shared, opaque)
+            self.test_db.release_exclusive(opaque)
+            self.assertEquals(self.test_db.directed(), True)
 
 
 if __name__ == '__main__':

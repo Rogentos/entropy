@@ -18,6 +18,7 @@ from entropy.const import etpConst
 from entropy.qa import QAInterface
 from entropy.security import System
 from entropy.security import Repository as RepositorySecurity
+from entropy.client.interfaces.settings import ClientSystemSettingsPlugin
 
 class LoadersMixin:
 
@@ -25,7 +26,6 @@ class LoadersMixin:
         self._spm_cache = {}
         # instantiate here to avoid runtime loading, that can cause failures
         # during complete system upgrades
-        from entropy.client.interfaces.trigger import Trigger
         from entropy.client.interfaces.repository import Repository
         from entropy.client.interfaces.package import \
             PackageActionFactory, PackageActionFactoryWrapper
@@ -37,7 +37,6 @@ class LoadersMixin:
         self.__package_factory = PackageActionFactory
         self.__package_loader = PackageActionFactoryWrapper
         self.__repository_loader = Repository
-        self.__trigger_loader = Trigger
         self.__sets_loader = Sets
         self.__configuration_updates_loader = ConfigurationUpdates
         self.__webservice_factory = ClientWebServiceFactory
@@ -52,14 +51,14 @@ class LoadersMixin:
         """
         return self.__sets_loader(self)
 
-    def Security(self):
+    def Security(self, *args, **kwargs):
         """
         Load Entropy Security Advisories interface object
 
         @return: Repository Security instance object
         @rtype: entropy.security.System
         """
-        return System(self)
+        return System(self, *args, **kwargs)
 
     def RepositorySecurity(self, keystore_dir = None):
         """
@@ -87,9 +86,6 @@ class LoadersMixin:
         qa_intf.set_title = self.set_title
         return qa_intf
 
-    def Triggers(self, *args, **kwargs):
-        return self.__trigger_loader(self, *args, **kwargs)
-
     def Repositories(self, *args, **kwargs):
         """
         Load Entropy Repositories manager instance object
@@ -97,8 +93,7 @@ class LoadersMixin:
         @return: Repository instance object
         @rtype: entropy.client.interfaces.repository.Repository
         """
-        cl_id = self.sys_settings_client_plugin_id
-        client_data = self._settings[cl_id]['misc']
+        client_data = self.ClientSettings()['misc']
         kwargs['gpg'] = client_data['gpg']
         return self.__repository_loader(self, *args, **kwargs)
 
@@ -173,7 +168,8 @@ class LoadersMixin:
         """
         Return SystemSettings Entropy Client plugin metadata dictionary
         """
-        return self._settings[self.sys_settings_client_plugin_id]
+        p_id = ClientSystemSettingsPlugin.ID
+        return self._settings[p_id]
 
     def Cacher(self):
         """

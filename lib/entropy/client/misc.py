@@ -33,6 +33,9 @@ class ConfigurationFiles(dict):
     a dictionary, containing the following items:
         "destination": path to destination file (string)
         "automerge": if source can be automerged to destination (bool)
+
+    This API is process and thread safe with regards to the Installed
+    Packages Repository. There is no need to do external locking on it.
     """
 
     def __init__(self, entropy_client, quiet=False):
@@ -63,8 +66,7 @@ class ConfigurationFiles(dict):
         Get CONFIG_PROTECT or CONFIG_PROTECT_MASK values from
         _repository_ids.
         """
-        cl_id = etpConst['system_settings_plugins_ids']['client_plugin']
-        misc_data = self._settings[cl_id]['misc']
+        misc_data = self._entropy.ClientSettings()['misc']
         config_protect = set()
         # also ask to Source Package Manager
         spm = self._entropy.Spm()
@@ -80,11 +82,15 @@ class ConfigurationFiles(dict):
 
         # get from our repositories
         for repository_id in self._repository_ids:
+            # assume that all the repositories need separate locking.
+            # this might be true in future.
             repo = self._entropy.open_repository(repository_id)
-            if mask:
-                _mask = repo.listConfigProtectEntries(mask = True)
-            else:
-                _mask = repo.listConfigProtectEntries()
+            with repo.shared():
+                if mask:
+                    _mask = repo.listConfigProtectEntries(mask = True)
+                else:
+                    _mask = repo.listConfigProtectEntries()
+
             config_protect |= set(_mask)
 
         root = ConfigurationFiles.root()

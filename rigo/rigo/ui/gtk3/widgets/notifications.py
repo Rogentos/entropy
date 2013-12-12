@@ -130,6 +130,7 @@ class NotificationBox(Gtk.HBox):
         hbox.pack_start(button_align, False, False, 2)
 
         content_area.set_property("expand", False)
+        content_area.set_property("hexpand", True)
         content_area.add(hbox)
 
         bar.show_all()
@@ -559,15 +560,12 @@ class LicensesNotificationBox(NotificationBox):
             if not repos:
                 return
 
-            self._entropy.rwsem().reader_acquire()
-            try:
+            with self._entropy.rwsem().reader():
                 for repo_id in repos:
                     repo = self._entropy.open_repository(repo_id)
                     license_text = repo.retrieveLicenseText(uri)
                     if license_text is not None:
                         break
-            finally:
-                self._entropy.rwsem().reader_release()
 
             if license_text is not None:
                 tmp_fd, tmp_path = const_mkstemp(suffix=".txt")

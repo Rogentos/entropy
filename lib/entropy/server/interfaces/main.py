@@ -21,6 +21,7 @@ import stat
 import subprocess
 import sys
 import time
+import threading
 
 from entropy.exceptions import OnlineMirrorError, PermissionDenied, \
     SystemDatabaseError, RepositoryError
@@ -1726,20 +1727,29 @@ class Server(Client):
             fake_default_repo_desc = None, handle_uninitialized = True,
             **kwargs):
 
+        self._indexing = False
+
+        # initialize Entropy Client superclass
+        if "installed_repo" not in kwargs:
+            kwargs["installed_repo"] = False
+        if "repo_validation" not in kwargs:
+            kwargs["repo_validation"] = False
+        Client.init_singleton(self,
+            indexing = self._indexing,
+            **kwargs
+        )
+
         if fake_default_repo_desc is None:
             fake_default_repo_desc = 'this is a fake repository'
         self.__instance_destroyed = False
 
-        self._cacher = EntropyCacher()
         # settings
         self._memory_db_srv_instances = {}
         self._treeupdates_repos = set()
         self._server_dbcache = {}
-        self._settings = SystemSettings()
         etpSys['serverside'] = True
         self.fake_default_repo = fake_default_repo
         self.fake_default_repo_id = fake_default_repo_id
-        self._indexing = False
         self.Mirrors = None
         self._settings_to_backup = []
         self._save_repository = save_repository
@@ -1815,15 +1825,6 @@ class Server(Client):
 
         self.switch_default_repository(
             self._repository, handle_uninitialized=handle_uninitialized)
-        # initialize Entropy Client superclass
-        if "installed_repo" not in kwargs:
-            kwargs["installed_repo"] = False
-        if "repo_validation" not in kwargs:
-            kwargs["repo_validation"] = False
-        Client.init_singleton(self,
-            indexing = self._indexing,
-            **kwargs
-        )
 
     def destroy(self, _from_shutdown = False):
         """
@@ -1847,6 +1848,13 @@ class Server(Client):
                 self._settings.remove_plugin(plug)
 
         self.close_repositories()
+
+    @property
+    def _cacher(self):
+        """
+        Return an EntropyCacher object instance.
+        """
+        return EntropyCacher()
 
     def is_destroyed(self):
         """
