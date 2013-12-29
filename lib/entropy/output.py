@@ -16,6 +16,7 @@ import sys
 import errno
 import curses
 import subprocess
+import threading
 
 from entropy.const import const_convert_to_rawstring, \
     const_isstring, const_convert_to_unicode, const_isunicode, \
@@ -497,10 +498,12 @@ def _std_write(msg, stderr = False):
         else:
             obj.write(msg)
 
-MESSAGE_HEADER = const_convert_to_unicode("\u2560 ")
+MESSAGE_HEADER = const_convert_to_unicode("\u2560 ") # ╠
+ERROR_MESSAGE_HEADER = const_convert_to_unicode("\u2622 ") # ☢
+WARNING_MESSAGE_HEADER = const_convert_to_unicode("\u261B ") # ☛
 
 def _print_prio(msg, color_func, back = False, flush = True, end = '\n',
-    stderr = False):
+                stderr = False, msg_header = None):
     if is_mute():
         return
     if not back:
@@ -510,7 +513,9 @@ def _print_prio(msg, color_func, back = False, flush = True, end = '\n',
     if is_tty:
         writechar("\r", stderr = stderr)
 
-    header = color_func(MESSAGE_HEADER)
+    if msg_header is None:
+        msg_header = MESSAGE_HEADER
+    header = color_func(msg_header)
 
     _std_write(header, stderr = stderr)
     _std_write(msg, stderr = stderr)
@@ -538,8 +543,8 @@ def print_error(msg, back = False, flush = True, end = '\n'):
     @return: None
     @rtype: None
     """
-    return _print_prio(msg, darkred, back = back, flush = flush, end = end, 
-        stderr = True)
+    return _print_prio(msg, darkred, back = back, flush = flush, end = end,
+                       stderr = True, msg_header = ERROR_MESSAGE_HEADER)
 
 def print_info(msg, back = False, flush = True, end = '\n'):
     """
@@ -574,7 +579,7 @@ def print_warning(msg, back = False, flush = True, end = '\n'):
     @rtype: None
     """
     return _print_prio(msg, brown, back = back, flush = flush, end = end,
-        stderr = True)
+                       stderr = True, msg_header = WARNING_MESSAGE_HEADER)
 
 def print_generic(*args, **kwargs):
     """
@@ -691,6 +696,8 @@ class TextInterface(object):
     with the user, channel is bi-directional.
     """
 
+    OUTPUT_LOCK = threading.RLock()
+
     @classmethod
     def output(cls, text, header = "", footer = "", back = False,
         importance = 0, level = "info", count = None, percent = False):
@@ -747,8 +754,9 @@ class TextInterface(object):
                     count_str = " (%s/%s) " % (red(str(count[0])),
                         blue(str(count[1])),)
 
-        myfunc(header+count_str+text+footer, back = back, flush = False)
-        _flush_stdouterr()
+        with TextInterface.OUTPUT_LOCK:
+            myfunc(header+count_str+text+footer, back = back, flush = False)
+            _flush_stdouterr()
 
     @classmethod
     def ask_question(cls, question, importance = 0, responses = None):

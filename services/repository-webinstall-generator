@@ -39,7 +39,7 @@ exit ${?}
 """+ etpConst['databasestarttag'])
 
     class CalculationError(EntropyException):
-        """Raised when an error occured while calculating the work queue"""
+        """Raised when an error occurred while calculating the work queue"""
 
     def __init__(self, repository_id, entropy_repository, package_dirs,
         mirror_urls, regenerate = False):
@@ -528,7 +528,7 @@ def _generate(args):
     acquired = False
     try:
 
-        acquired = SimpleFileLock.acquire_lock(lock_file, lock_map)
+        acquired = SimpleFileLock.acquire(lock_file, lock_map)
         if not acquired:
             print_error(brown(_("Another instance is running.")))
             return 1
@@ -560,7 +560,7 @@ def _generate(args):
 
     finally:
         if acquired:
-            SimpleFileLock.release_lock(lock_file, lock_map)
+            SimpleFileLock.release(lock_file, lock_map)
 
 
 if __name__ == "__main__":

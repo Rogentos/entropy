@@ -244,10 +244,9 @@ class EntropySQLiteRepository(EntropySQLRepository):
             return os.path.join(
                 etpConst['entropyrundir'],
                 "repository",
-                "%s_%s_%s.lock" % (
+                "%s_%s.lock" % (
                     self.name,
                     os.getpid(),
-                    id(self)
                 )
             )
         return super(EntropySQLiteRepository, self).lock_path()
@@ -513,9 +512,6 @@ class EntropySQLiteRepository(EntropySQLRepository):
             self._discardLiveCache()
         return self._live_cacher.get(self._getLiveCacheKey() + key)
 
-    _FLOCK_LOCK_MAP = {}
-    _FLOCK_LOCK_MUTEX = threading.Lock()
-
     def _get_reslock(self, mode):
         """
         Get the lock object used for locking.
@@ -525,8 +521,6 @@ class EntropySQLiteRepository(EntropySQLRepository):
 
             def __init__(self, repo, mode, path):
                 super(RepositoryResourceLock, self).__init__(
-                    EntropySQLiteRepository._FLOCK_LOCK_MAP,
-                    EntropySQLiteRepository._FLOCK_LOCK_MUTEX,
                     output = repo)
                 self._path = path
                 self._mode = mode
@@ -569,11 +563,13 @@ class EntropySQLiteRepository(EntropySQLRepository):
         if lock.directed():
             return lock
 
+        already_acquired = lock.is_already_acquired()
         lock.acquire_shared()
 
-        # in-RAM cached data may have become stale
-        if not self._is_memory():
-            self.clearCache()
+        if not already_acquired:
+            # in-RAM cached data may have become stale
+            if not self._is_memory():
+                self.clearCache()
 
         return lock
 
@@ -585,11 +581,13 @@ class EntropySQLiteRepository(EntropySQLRepository):
         if lock.directed():
             return lock
 
+        already_acquired = lock.is_already_acquired()
         acquired = lock.try_acquire_shared()
         if acquired:
-            # in-RAM cached data may have become stale
-            if not self._is_memory():
-                self.clearCache()
+            if not already_acquired:
+                # in-RAM cached data may have become stale
+                if not self._is_memory():
+                    self.clearCache()
             return lock
         else:
             return None
@@ -602,11 +600,13 @@ class EntropySQLiteRepository(EntropySQLRepository):
         if lock.directed():
             return lock
 
+        already_acquired = lock.is_already_acquired()
         lock.acquire_exclusive()
 
-        # in-RAM cached data may have become stale
-        if not self._is_memory():
-            self.clearCache()
+        if not already_acquired:
+            # in-RAM cached data may have become stale
+            if not self._is_memory():
+                self.clearCache()
         return lock
 
     def try_acquire_exclusive(self):
@@ -617,11 +617,13 @@ class EntropySQLiteRepository(EntropySQLRepository):
         if lock.directed():
             return lock
 
+        already_acquired = lock.is_already_acquired()
         acquired = lock.try_acquire_exclusive()
         if acquired:
-            # in-RAM cached data may have become stale
-            if not self._is_memory():
-                self.clearCache()
+            if not already_acquired:
+                # in-RAM cached data may have become stale
+                if not self._is_memory():
+                    self.clearCache()
             return lock
 
     def _release_reslock(self, lock, mode):

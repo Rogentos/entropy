@@ -19,6 +19,7 @@
 """
 import codecs
 import errno
+import hashlib
 import os
 import sys
 import threading
@@ -477,7 +478,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         self.__cacher = EntropyCacher()
         self.__data = {}
         self.__is_destroyed = False
-        self.__cache_cleared = False
         self.__inside_with_stmt = 0
         self.__pkg_comment_tag = "##"
 
@@ -645,7 +645,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         self.__mtime_files.clear()
         if not SystemSettings.DISK_DATA_CACHE:
             self.__mtime_cache.clear()
-        self.__cache_cleared = False
 
         packages_dir = SystemSettings.packages_config_directory()
         self.__setting_files.update({
@@ -1064,6 +1063,43 @@ class SystemSettings(Singleton, EntropyPluginStore):
         """
         return self.__setting_dirs.copy()
 
+    def packages_configuration_hash(self):
+        """
+        Return a SHA1 hash of the current packages configuration.
+        This includes masking, unmasking, keywording, system masking
+        settings.
+        """
+        cache_key = "__packages_configuration_hash__"
+        cached = self.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sha = hashlib.sha1()
+
+        configs = (
+            ("mask", self['mask']),
+            ("unmask", self['unmask']),
+            ("keyword_mask", self['keywords']),
+            ("license_mask", self['license_mask']),
+            ("license_accept", self['license_accept']),
+            ("system_mask", self['system_mask']),
+            ("live_unmask", self['live_packagemasking']['unmask_matches']),
+            ("live_mask", self['live_packagemasking']['mask_matches']),
+            )
+
+        sha.update(const_convert_to_rawstring("-begin-"))
+        for name, config in configs:
+            cache_s = "%s:{%s}|" % (
+                name, ",".join(sorted(config)),
+                )
+            sha.update(const_convert_to_rawstring(cache_s))
+
+        sha.update(const_convert_to_rawstring("-end-"))
+
+        outcome = sha.hexdigest()
+        self[cache_key] = outcome
+        return outcome
+
     def _keywords_parser(self):
         """
         Parser returning package keyword masking metadata
@@ -1174,13 +1210,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        valid = self.validate_entropy_cache(self.__setting_files['unmask'],
+        self.validate_entropy_cache(
+            self.__setting_files['unmask'],
             self.__mtime_files['unmask_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
         return self.__generic_parser(self.__setting_files['unmask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1194,13 +1226,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        valid = self.validate_entropy_cache(self.__setting_files['mask'],
+        self.validate_entropy_cache(
+            self.__setting_files['mask'],
             self.__mtime_files['mask_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
         return self.__generic_parser(self.__setting_files['mask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1245,7 +1273,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
         return self.__generic_d_parser("license_accept_d", "license_accept")
 
     def __generic_d_parser(self, setting_dirs_id, setting_id,
-                           validate = True, parse_skipped = False):
+                           parse_skipped = False):
         """
         Generic parser used by _*_d_parser() functions.
         """
@@ -1255,26 +1283,17 @@ class SystemSettings(Singleton, EntropyPluginStore):
         dmp_mtime_dir_file = os.path.join(
             dmp_dir, os.path.basename(conf_dir) + ".mtime")
 
-        if validate:
-            valid = self.validate_entropy_cache(
-                conf_dir, dmp_mtime_dir_file)
-            if (not valid) and (not self.__cache_cleared):
-                self.__cache_cleared = True
-                EntropyCacher.clear_cache()
+        self.validate_entropy_cache(conf_dir, dmp_mtime_dir_file)
 
         content = []
         files = setting_files
         if parse_skipped:
             files = skipped_files
         for sett_file, mtime_sett_file in files:
-            if validate:
-                valid = self.validate_entropy_cache(
-                    sett_file, mtime_sett_file)
-                if (not valid) and (not self.__cache_cleared):
-                    self.__cache_cleared = True
-                    EntropyCacher.clear_cache()
+            self.validate_entropy_cache(sett_file, mtime_sett_file)
             content += self.__generic_parser(sett_file,
                 comment_tag = self.__pkg_comment_tag)
+
         if setting_id is not None:
             # Always push out CachingList objects if
             # metadata is not available in self.__data
@@ -1299,13 +1318,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        valid = self.validate_entropy_cache(self.__setting_files['system_mask'],
+        self.validate_entropy_cache(
+            self.__setting_files['system_mask'],
             self.__mtime_files['system_mask_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
         return self.__generic_parser(self.__setting_files['system_mask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1347,14 +1362,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        valid = self.validate_entropy_cache(
+        self.validate_entropy_cache(
             self.__setting_files['license_mask'],
-                self.__mtime_files['license_mask_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
+            self.__mtime_files['license_mask_mtime'])
         return self.__generic_parser(self.__setting_files['license_mask'])
 
     def _license_accept_parser(self):
@@ -1366,14 +1376,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        valid = self.validate_entropy_cache(
+        self.validate_entropy_cache(
             self.__setting_files['license_accept'],
             self.__mtime_files['license_accept_mtime'])
-        if (not valid) and (not self.__cache_cleared):
-            # all the cache must be cleared (including upgrade and
-            # repository match cache
-            self.__cache_cleared = True
-            EntropyCacher.clear_cache()
         return self.__generic_parser(self.__setting_files['license_accept'])
 
     def _extract_packages_from_set_file(self, filepath):
@@ -1892,13 +1897,12 @@ class SystemSettings(Singleton, EntropyPluginStore):
             return data
 
         repositories_d_conf = self.__generic_d_parser(
-            "repositories_conf_d", None, validate=False)
+            "repositories_conf_d", None)
 
         # add content of skipped (disabled) files as commented
         # out stuff
         skipped_conf = ["#" + x for x in self.__generic_d_parser(
-            "repositories_conf_d", None,
-            validate=False, parse_skipped=True)]
+            "repositories_conf_d", None, parse_skipped=True)]
         repositories_d_conf += skipped_conf
 
         repoids = set()
@@ -2102,8 +2106,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         if tx_limit is not None:
             data['transfer_limit'] = tx_limit
 
-        # validate using mtime
-        dmp_path = etpConst['dumpstoragedir']
         for repoid in repoids:
 
             found_into = 'available'
@@ -2115,23 +2117,11 @@ class SystemSettings(Singleton, EntropyPluginStore):
             else:
                 continue
 
-            # validate repository settings
+            # fixup repository settings
             if not repo_data['plain_database'].strip():
                 data[found_into].pop(repoid)
                 if repoid in data['order']:
                     data['order'].remove(repoid)
-
-            repo_db_path = os.path.join(repo_data['dbpath'],
-                etpConst['etpdatabasefile'])
-            repo_mtime_fn = "%s_%s_%s.mtime" % (repoid, data['branch'],
-                data['product'],)
-
-            repo_db_path_mtime = os.path.join(dmp_path, repo_mtime_fn)
-            if os.path.isfile(repo_db_path):
-                valid = self.validate_entropy_cache(repo_db_path,
-                    repo_db_path_mtime, repoid = repoid)
-                if not valid:
-                    EntropyCacher.clear_cache(excluded_items = ["db_match"])
 
         # insert extra packages mirrors directly from repository dirs
         # if they actually exist. use data['order'] because it reflects
@@ -2236,19 +2226,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
 
         return data
 
-    def _clear_repository_cache(self, repoid = None):
-        """
-        Internal method, go away!
-        """
-        self.__cacher.discard()
-        EntropyCacher.clear_cache(excluded_items = ["db_match", "world_update"])
-
-        if repoid is not None:
-            EntropyCacher.clear_cache_item("%s/%s/" % (
-                EntropyCacher.CACHE_IDS['db_match'], repoid,))
-            EntropyCacher.clear_cache_item("%s/%s/" % (
-                EntropyCacher.CACHE_IDS['mask_filter'], repoid,))
-
     def __generic_parser(self, filepath, comment_tag = "#"):
         """
         Internal method. This is the generic file parser here.
@@ -2309,11 +2286,9 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @rtype: None
         """
         if os.path.isdir(etpConst['dumpstoragedir']):
+            self.__cacher.discard()
             if repoid:
-                self._clear_repository_cache(repoid = repoid)
                 return
-            for repoid in self['repositories']['order']:
-                self._clear_repository_cache(repoid = repoid)
         else:
             try:
                 os.makedirs(etpConst['dumpstoragedir'])

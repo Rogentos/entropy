@@ -15,6 +15,7 @@ import sys
 
 from entropy.i18n import _
 from entropy.const import etpConst, const_convert_to_unicode
+from entropy.locks import UpdatesNotificationResourceLock
 from entropy.misc import ParallelTask
 from entropy.output import brown, purple, darkred, red, \
     blue, darkblue, darkgreen, bold
@@ -586,53 +587,73 @@ Install or update packages or package files.
                 header=darkred(" @@ "))
             return 0, False
 
+        notification_lock = UpdatesNotificationResourceLock(
+            output=entropy_client)
         package_set = set(packages)
         total = len(run_queue)
-        for count, pkg_match in enumerate(run_queue, 1):
 
-            metaopts = {
-                'removeconfig': config_files,
-            }
+        notif_acquired = False
+        try:
+            # this is a best effort, we will not sleep if the lock
+            # is not acquired because we may get blocked for an eternity
+            # (well, for a very long time) in this scenario:
+            # 1. RigoDaemon is running some action queue
+            # 2. Another thread in RigoDaemon is stuck on the activity
+            #    mutex with the notification lock held.
+            # 3. We cannot move on here because of 2.
+            # Nothing bad will happen if we just ignore the acquisition
+            # state.
+            notif_acquired = notification_lock.try_acquire_shared()
 
-            if onlydeps:
-                metaopts['install_source'] = \
-                    etpConst['install_sources']['automatic_dependency']
-            elif pkg_match in package_set:
-                metaopts['install_source'] = \
-                    etpConst['install_sources']['user']
-            else:
-                metaopts['install_source'] = \
-                    etpConst['install_sources']['automatic_dependency']
+            for count, pkg_match in enumerate(run_queue, 1):
 
-            package_id, repository_id = pkg_match
-            atom = entropy_client.open_repository(
-                repository_id).retrieveAtom(package_id)
+                metaopts = {
+                    'removeconfig': config_files,
+                }
 
-            pkg = None
-            try:
-                pkg = action_factory.get(
-                    action_factory.INSTALL_ACTION,
-                    pkg_match, opts=metaopts)
+                if onlydeps:
+                    metaopts['install_source'] = \
+                        etpConst['install_sources']['automatic_dependency']
+                elif pkg_match in package_set:
+                    metaopts['install_source'] = \
+                        etpConst['install_sources']['user']
+                else:
+                    metaopts['install_source'] = \
+                        etpConst['install_sources']['automatic_dependency']
 
-                xterm_header = "equo (%s) :: %d of %d ::" % (
-                    _("install"), count, total)
+                package_id, repository_id = pkg_match
+                atom = entropy_client.open_repository(
+                    repository_id).retrieveAtom(package_id)
 
-                pkg.set_xterm_header(xterm_header)
+                pkg = None
+                try:
+                    pkg = action_factory.get(
+                        action_factory.INSTALL_ACTION,
+                        pkg_match, opts=metaopts)
 
-                entropy_client.output(
-                    purple(atom),
-                    count=(count, total),
-                    header=darkgreen(" +++ ") + ">>> ")
+                    xterm_header = "equo (%s) :: %d of %d ::" % (
+                        _("install"), count, total)
 
-                exit_st = pkg.start()
-                if exit_st != 0:
-                    if ugc_thread is not None:
-                        ugc_thread.join()
-                    return 1, True
+                    pkg.set_xterm_header(xterm_header)
 
-            finally:
-                if pkg is not None:
-                    pkg.finalize()
+                    entropy_client.output(
+                        purple(atom),
+                        count=(count, total),
+                        header=darkgreen(" +++ ") + ">>> ")
+
+                    exit_st = pkg.start()
+                    if exit_st != 0:
+                        if ugc_thread is not None:
+                            ugc_thread.join()
+                        return 1, True
+
+                finally:
+                    if pkg is not None:
+                        pkg.finalize()
+
+        finally:
+            if notif_acquired:
+                notification_lock.release()
 
         if ugc_thread is not None:
             ugc_thread.join()

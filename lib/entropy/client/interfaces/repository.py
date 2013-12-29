@@ -37,9 +37,6 @@ class RepositoriesUpdateResourcesLock(ResourceLock):
     access to the repositories update process.
     """
 
-    _FILE_LOCK_MUTEX = threading.Lock()
-    _FILE_LOCK_MAP = {}
-
     def __init__(self, output=None):
         """
         Object constructor.
@@ -48,8 +45,6 @@ class RepositoriesUpdateResourcesLock(ResourceLock):
         @type output: entropy.output.TextInterface or None
         """
         super(RepositoriesUpdateResourcesLock, self).__init__(
-            RepositoriesUpdateResourcesLock._FILE_LOCK_MAP,
-            RepositoriesUpdateResourcesLock._FILE_LOCK_MUTEX,
             output=output)
 
     def path(self):
@@ -67,8 +62,7 @@ class Repository(object):
     """
 
     def __init__(self, entropy_client, repo_identifiers = None,
-        force = False, entropy_updates_alert = True, fetch_security = True,
-        gpg = True):
+        force = False, fetch_security = True, gpg = True):
         """
         Entropy Client Repositories management interface constructor.
 
@@ -94,7 +88,6 @@ class Repository(object):
         self.need_packages_cleanup = False
         self.updated_repos = set()
         self.fetch_security = fetch_security
-        self.entropy_updates_alert = entropy_updates_alert
         self.already_updated = 0
         self.not_available = 0
         self._gpg_feature = gpg
@@ -184,22 +177,18 @@ class Repository(object):
             if self.fetch_security:
                 self._update_security_advisories()
 
-            # do treeupdates
-            if isinstance(self._entropy.installed_repository(),
-                EntropyRepositoryBase):
-
-                for repo in self.repo_ids:
-                    try:
-                        dbc = self._entropy.open_repository(repo)
-                    except RepositoryError:
-                        # download failed and repo is not available, skip!
-                        continue
-                    try:
-                        self._entropy.repository_packages_spm_sync(repo, dbc)
-                    except Error:
-                        # EntropyRepository error, missing table?
-                        continue
-                self._entropy.close_repositories()
+            for repo in self.repo_ids:
+                try:
+                    dbc = self._entropy.open_repository(repo)
+                except RepositoryError:
+                    # download failed and repo is not available, skip!
+                    continue
+                try:
+                    self._entropy.repository_packages_spm_sync(repo, dbc)
+                except Error:
+                    # EntropyRepository error, missing table?
+                    continue
+            self._entropy.close_repositories()
 
         if self.sync_errors:
             self._entropy.output(
@@ -210,9 +199,6 @@ class Repository(object):
             )
             self.sync_errors = True
             return 128
-
-        if self.entropy_updates_alert:
-            self._check_entropy_updates()
 
         if self.updated:
             pkgs = self._entropy.clean_downloaded_packages(dry_run = True)
@@ -257,28 +243,6 @@ class Repository(object):
                         )
 
         return 0
-
-    def _check_entropy_updates(self):
-        rc = False
-        if self.entropy_updates_alert:
-            try:
-                rc, pkg_match = self._entropy.check_package_update(
-                    "sys-apps/entropy", deep = True)
-            except:
-                pass
-        if rc:
-            self.new_entropy = True
-            mytxt = "%s: %s. %s." % (
-                bold("Entropy"),
-                blue(_("a new release is available")),
-                darkred(_("Mind to install it before any other package")),
-            )
-            self._entropy.output(
-                mytxt,
-                importance = 1,
-                level = "info",
-                header = bold(" !!! ")
-            )
 
     def _set_last_successful_sync_time(self):
         """

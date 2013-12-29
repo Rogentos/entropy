@@ -10,14 +10,16 @@
 
 """
 import codecs
+import hashlib
 import os
 
 from entropy.const import etpConst, const_file_readable, \
-    const_convert_to_unicode
+    const_convert_to_unicode, const_convert_to_rawstring
 from entropy.core.settings.plugins.skel import SystemSettingsPlugin
 from entropy.core.settings.base import SystemSettings
 
 from entropy.exceptions import SystemDatabaseError, RepositoryError
+from entropy.db.exceptions import Error as EntropyRepositoryError
 
 import entropy.dep
 import entropy.tools
@@ -292,42 +294,6 @@ class ClientSystemSettingsPlugin(SystemSettingsPlugin):
         if not update:
             self._helper._run_repository_post_branch_upgrade_hooks()
             delete_in_branch_upgrade()
-
-    def system_mask_parser(self, system_settings_instance):
-
-        parser_data = {}
-        # match installed packages of system_mask
-        mask_installed = []
-        mask_installed_keys = {}
-        while (self._helper.installed_repository() != None):
-            try:
-                self._helper.installed_repository().validate()
-            except SystemDatabaseError:
-                break
-            mc_cache = set()
-            repos_mask_list = self.__repositories_system_mask(
-                system_settings_instance)
-            m_list = repos_mask_list + system_settings_instance['system_mask']
-            for atom in m_list:
-                m_ids, m_r = self._helper.installed_repository().atomMatch(atom,
-                    multiMatch = True)
-                if m_r != 0:
-                    continue
-                mykey = entropy.dep.dep_getkey(atom)
-                obj = mask_installed_keys.setdefault(mykey, set())
-                for m_id in m_ids:
-                    if m_id in mc_cache:
-                        continue
-                    mc_cache.add(m_id)
-                    mask_installed.append(m_id)
-                    obj.add(m_id)
-            break
-
-        parser_data.update({
-            'repos_installed': mask_installed,
-            'repos_installed_keys': mask_installed_keys,
-        })
-        return parser_data
 
     def masking_validation_parser(self, system_settings_instance):
         data = {
@@ -691,3 +657,54 @@ class ClientSystemSettingsPlugin(SystemSettingsPlugin):
             # run post-branch upgrade migration scripts if the function
             # above created migration files to handle
             self.__run_post_branch_upgrade_hooks(system_settings_instance)
+
+    def packages_configuration_hash(self):
+        """
+        Return a SHA1 hash of the current packages configuration.
+        This includes masking, unmasking, keywording of all the
+        configured repositories.
+        """
+        sha = hashlib.sha1()
+        sha.update(const_convert_to_rawstring("-begin-"))
+
+        settings = self._helper.ClientSettings()
+        repo_settings = settings['repositories']
+
+        cache_key = "__packages_configuration_hash__"
+        cached = repo_settings.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sha.update(const_convert_to_rawstring("-begin-mask-"))
+
+        for repository_id in sorted(repo_settings['mask'].keys()):
+            packages = repo_settings['mask'][repository_id]
+            cache_s = "mask:%s:{%s}|" % (
+                repository_id, ",".join(sorted(packages)),
+                )
+
+            sha.update(const_convert_to_rawstring(cache_s))
+
+        sha.update(const_convert_to_rawstring("-end-mask-"))
+
+        sha.update(const_convert_to_rawstring("-begin-keywords-"))
+        for repository_id in sorted(repo_settings['repos_keywords'].keys()):
+            data = repo_settings['repos_keywords'][repository_id]
+            packages = data['packages']
+
+            for package in sorted(packages.keys()):
+                keywords = packages[package]
+                cache_s = "repos_keywords:%s:%s:{%s}|" % (
+                    repository_id,
+                    package,
+                    sorted(keywords),
+                    )
+                sha.update(const_convert_to_rawstring(cache_s))
+
+        sha.update(const_convert_to_rawstring("-end-keywords-"))
+
+        sha.update(const_convert_to_rawstring("-end-"))
+
+        outcome = sha.hexdigest()
+        repo_settings[cache_key] = outcome
+        return outcome

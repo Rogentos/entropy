@@ -860,11 +860,14 @@ class AvailablePackagesRepositoryUpdater(object):
         dbconn = self._entropy.open_repository(self._repository_id)
         dbconn.createAllIndexes()
         dbconn.commit(force = True)
-        if self._entropy.installed_repository() is not None:
-            try: # client db can be absent
-                self._entropy.installed_repository().createAllIndexes()
-            except (DatabaseError, OperationalError, IntegrityError,):
-                pass
+
+        inst_repo = self._entropy.installed_repository()
+        if inst_repo is not None:
+            with inst_repo.exclusive():
+                try: # client db can be absent
+                    inst_repo.createAllIndexes()
+                except (DatabaseError, OperationalError, IntegrityError,):
+                    pass
         const_set_nice_level(old_prio)
 
     def _construct_paths(self, uri, item, cmethod, get_signature = False):
@@ -1290,7 +1293,7 @@ class AvailablePackagesRepositoryUpdater(object):
                 header = "\t"
             )
             mytxt = "%s. %s" % (
-                red(_("An error occured while checking repository integrity")),
+                red(_("An error occurred while checking repository integrity")),
                 red(_("Giving up")),
             )
             self._entropy.output(
@@ -2231,7 +2234,6 @@ class MaskableRepository(EntropyRepositoryBase):
     The only repositories that need to support the feature are those containing
     installable packages, like AvailablePackagesRepository.
     """
-    _MASK_FILTER_CACHE_ID = EntropyCacher.CACHE_IDS['mask_filter']
 
     _real_client_settings = None
     _real_client_settings_lock = threading.Lock()
@@ -2253,16 +2255,33 @@ class MaskableRepository(EntropyRepositoryBase):
 
         return self._real_client_settings
 
+    @property
+    def _settings_client_plugin(self):
+        """
+        Get the ClientSystemSettingsPlugin instance from Entropy Client.
+        """
+        from entropy.client.interfaces import Client
+        return Client()._settings_client_plugin
+
     def _mask_filter_fetch_cache(self, package_id):
         if self._caching:
-            return loadobj("%s/%s/%s" % (
-                MaskableRepository._MASK_FILTER_CACHE_ID, self.name,
-                    package_id,))
+            return loadobj(
+                "MaskableRepositoryFilter/%s_%s/%s" % (
+                    self.name,
+                    self.atomMatchCacheKey(),
+                    package_id,
+                    )
+                )
 
     def _mask_filter_store_cache(self, package_id, value):
         if self._caching:
-            dumpobj("%s/%s/%s" % (MaskableRepository._MASK_FILTER_CACHE_ID,
-                self.name, package_id,), value)
+            dumpobj(
+                "MaskableRepositoryFilter/%s_%s/%s" % (
+                    self.name,
+                    self.atomMatchCacheKey(),
+                    package_id,
+                    ),
+                value)
 
     def _maskFilter_live(self, package_id):
 
@@ -2670,6 +2689,15 @@ class MaskableRepository(EntropyRepositoryBase):
         validator_cache[(package_id, self.name, live)] = -1, myr
         self._mask_filter_store_cache(package_id, data)
         return -1, myr
+
+    def atomMatchCacheKey(self):
+        """
+        Reimplemented from EntropyRepositoryBase.
+        """
+        return "%s_%s" % (
+            SystemSettings().packages_configuration_hash(),
+            self._settings_client_plugin.packages_configuration_hash(),
+            )
 
 
 class AvailablePackagesRepository(CachedRepository, MaskableRepository):

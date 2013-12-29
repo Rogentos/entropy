@@ -1,11 +1,10 @@
 Short term:
 
+- add repository dependencies and conflicts metadata
 
-- entropy.client.interfaces code refactoring (including inst_repo locking)
+- entropy.client.interfaces code refactoring
 - wrap available repositories usage around a ResourceLock, this will
   decrease the need for an exclusively held Entropy Resources Lock.
-
-- drop all the EntropyCacher.CACHE_IDS
 
 - conditional deps:
   enabled with ETP_PORTAGE_CONDITIONAL_DEPS_ENABLE

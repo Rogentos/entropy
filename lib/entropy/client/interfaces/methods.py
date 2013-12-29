@@ -41,6 +41,7 @@ from entropy.fetchers import UrlFetcher
 from entropy.client.interfaces.db import ClientEntropyRepositoryPlugin, \
     InstalledPackagesRepository, AvailablePackagesRepository, GenericRepository
 from entropy.client.mirrors import StatusInterface
+from entropy.client.misc import sharedinstlock
 from entropy.output import purple, bold, red, blue, darkgreen, darkred, brown, \
     teal
 from entropy.client.interfaces.package.actions.action import PackageAction
@@ -340,10 +341,6 @@ class RepositoryMixin:
                 updated = False
             if updated:
                 self._cacher.discard()
-                EntropyCacher.clear_cache_item(
-                    EntropyCacher.CACHE_IDS['world_update'])
-                EntropyCacher.clear_cache_item(
-                    EntropyCacher.CACHE_IDS['critical_update'])
         return conn
 
     def add_repository(self, repository_metadata):
@@ -369,9 +366,6 @@ class RepositoryMixin:
         added = False
         if self._is_package_repository(repoid) or is_temp:
             # package repository
-
-            # remove cache, if any
-            self._settings._clear_repository_cache(repoid = repoid)
 
             avail_data[repoid]['plain_packages'] = \
                 repository_metadata.get('plain_packages', [])[:]
@@ -410,7 +404,6 @@ class RepositoryMixin:
 
             added = self._conf_add_repository(
                 repoid, repository_metadata)
-            self._settings._clear_repository_cache(repoid = repoid)
             self.close_repositories()
             self.clear_cache()
             self._settings.clear()
@@ -447,7 +440,7 @@ class RepositoryMixin:
         # also early remove from _enabled_repos to avoid
         # issues when reloading SystemSettings which is bound to
         # Entropy Client SystemSettings plugin, which
-        # triggers calculate_world_updates,
+        # triggers calculate_updates,
         # which triggers _all_repositories_hash, which triggers
         # open_repository, which triggers _load_repository,
         # which triggers an unwanted
@@ -476,7 +469,6 @@ class RepositoryMixin:
 
             # if it's a package repository, don't remove cache here
             if not self._is_package_repository(repository_id):
-                self._settings._clear_repository_cache(repoid = repository_id)
                 # save new self._settings['repositories']['available'] to file
                 # -- nothing to do anyway if repository is a package repository
                 if disable:
@@ -755,7 +747,6 @@ class RepositoryMixin:
             self._settings['repositories']['order'])
         self._settings.clear()
         self.close_repositories()
-        self._settings._clear_repository_cache(repoid = repository_id)
         self._validate_repositories()
 
     def enable_repository(self, repository_id):
@@ -770,7 +761,6 @@ class RepositoryMixin:
         @return: True, if repository has been enabled
         @rtype: bool
         """
-        self._settings._clear_repository_cache(repoid = repository_id)
         # save new self._settings['repositories']['available'] to file
         enabled = self._conf_enable_disable_repository(repository_id, True)
         if enabled:
@@ -812,7 +802,6 @@ class RepositoryMixin:
         # it's not vital to reset
         # self._settings['repositories']['order'] counters
 
-        self._settings._clear_repository_cache(repoid = repository_id)
         # save new self._settings['repositories']['available'] to file
         disabled = self._conf_enable_disable_repository(repository_id, False)
         self._settings.clear()
@@ -1729,10 +1718,12 @@ class MiscMixin:
         # above on reopen_installed_repository()
         self.close_repositories()
         if chroot:
-            try:
-                self.installed_repository().resetTreeupdatesDigests()
-            except EntropyRepositoryError:
-                pass
+            inst_repo = self.installed_repository()
+            with inst_repo.exclusive():
+                try:
+                    inst_repo.resetTreeupdatesDigests()
+                except EntropyRepositoryError:
+                    pass
 
     def is_entropy_package_free(self, package_id, repository_id):
         """
@@ -1760,6 +1751,7 @@ class MiscMixin:
             return False
         return True
 
+    @sharedinstlock
     def get_licenses_to_accept(self, package_matches):
         """
         Return, for given package matches, what licenses have to be accepted.
@@ -1773,6 +1765,7 @@ class MiscMixin:
         """
         repo_sys_data = self.ClientSettings()['repositories']
         lic_accepted = self._settings['license_accept']
+        inst_repo = self.installed_repository()
 
         licenses = {}
         for pkg_id, repo_id in package_matches:
@@ -1789,7 +1782,7 @@ class MiscMixin:
             for key in keys:
                 if key in wl:
                     continue
-                found = self.installed_repository().isLicenseAccepted(key)
+                found = inst_repo.isLicenseAccepted(key)
                 if found:
                     continue
                 obj = licenses.setdefault(key, set())
@@ -1969,7 +1962,10 @@ class MiscMixin:
 
         # reset treeupdatesactions
         self.reopen_installed_repository()
-        self.installed_repository().resetTreeupdatesDigests()
+        inst_repo = self.installed_repository()
+        with inst_repo.exclusive():
+            inst_repo.resetTreeupdatesDigests()
+
         self._validate_repositories(quiet = True)
         self.close_repositories()
         if cacher_started:
@@ -2001,8 +1997,9 @@ class MiscMixin:
         if "/" in search_term:
             atom_srch = True
 
+        inst_repo = None
         if from_installed:
-            if hasattr(self, '_installed_repository'):
+            if hasattr(self, 'installed_repository'):
                 inst_repo = self.installed_repository()
                 if inst_repo is not None:
                     valid_repos.append(inst_repo)
@@ -2017,8 +2014,16 @@ class MiscMixin:
                 dbconn = repo
             else:
                 continue
-            pkg_data.extend([(x, repo,) for x in \
-                dbconn.searchSimilarPackages(search_term, atom = atom_srch)])
+
+            if inst_repo is dbconn and inst_repo is not None:
+                with inst_repo.shared():
+                    similar = dbconn.searchSimilarPackages(
+                        search_term, atom = atom_srch)
+            else:
+                similar = dbconn.searchSimilarPackages(
+                    search_term, atom = atom_srch)
+
+            pkg_data.extend([(x, repo,) for x in similar])
 
         return pkg_data
 
@@ -2189,6 +2194,7 @@ class MiscMixin:
 
 class MatchMixin:
 
+    @sharedinstlock
     def get_package_action(self, package_match, installed_package_id = None):
         """
         For given package match, return an action value representing the
@@ -2205,6 +2211,15 @@ class MatchMixin:
         @return: package status
         @rtype: int
         """
+        return self._get_package_action(
+            package_match, installed_package_id = installed_package_id)
+
+    def _get_package_action(self, package_match,
+                           installed_package_id = None):
+        """
+        See get_package_action(), this internal method runs assuming that
+        repositories lock are already acquired.
+        """
         inst_repo = self.installed_repository()
         pkg_id, pkg_repo = package_match
         dbconn = self.open_repository(pkg_repo)
@@ -2217,18 +2232,22 @@ class MatchMixin:
             installed_package_id = sorted(results)[-1]
 
         pkgver, pkgtag, pkgrev = dbconn.getVersioningData(pkg_id)
+
         ver_data = inst_repo.getVersioningData(installed_package_id)
         if ver_data is None:
-            # installed package_id is not available, race condition, probably
+            # installed package_id is not available,
+            # race condition, probably
             return 1
+
         installed_ver, installed_tag, installed_rev = ver_data
+
         pkgcmp = entropy.dep.entropy_compare_versions(
             (pkgver, pkgtag, pkgrev),
             (installed_ver, installed_tag, installed_rev))
         if pkgcmp == 0:
             # check digest, if it differs, we should mark pkg as update
-            # we don't want users to think that they are "reinstalling" stuff
-            # because it will just confuse them
+            # we don't want users to think that they are "reinstalling"
+            # stuff because it will just confuse them
             inst_digest = inst_repo.retrieveDigest(installed_package_id)
             repo_digest = dbconn.retrieveDigest(pkg_id)
             if inst_digest != repo_digest:
@@ -2236,6 +2255,7 @@ class MatchMixin:
             return 0
         elif pkgcmp > 0:
             return 2
+
         return -1
 
     def is_package_masked(self, package_match, live_check = True):
@@ -2386,7 +2406,6 @@ class MatchMixin:
                 _("not a valid method"), method,) )
 
         self._cacher.discard()
-        self._settings._clear_repository_cache(package_match[1])
         done = f(package_match, dry_run)
         if done and not dry_run:
             self._settings.clear()
@@ -2533,6 +2552,7 @@ class MatchMixin:
             entropy.tools.rename_keep_permissions(
                 tmp_path, mask_file)
 
+    @sharedinstlock
     def search_installed_mimetype(self, mimetype):
         """
         Given a mimetype, return list of installed package identifiers

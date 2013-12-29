@@ -35,22 +35,6 @@ import entropy.tools
 
 class EntropyCacher(Singleton):
 
-    CACHE_IDS = {
-            'db_match': 'match/db',
-            'dep_tree': 'deptree/dep_tree_',
-            'atom_match': 'atom_match/atom_match_',
-            'atom_search': 'atom_search/atom_search_',
-            'world_update': 'world_update/world_cache_',
-            'critical_update': 'critical_update/critical_cache_',
-            'world_available': 'world_available/available_cache_',
-            'world_masked': 'world_available/masked_cache_',
-            'check_package_update': 'check_update/package_update_',
-            'depends_tree': 'depends/depends_tree_',
-            'filter_satisfied_deps': 'depfilter/filter_satisfied_deps_',
-            'library_breakage': 'libs_break/library_breakage_',
-            'mask_filter': 'match/mask_filter',
-        }
-
     # Max number of cache objects written at once
     _OBJS_WRITTEN_AT_ONCE = 250
 
@@ -448,22 +432,6 @@ class EntropyCacher(Singleton):
             except (OSError, IOError,):
                 pass
 
-    @classmethod
-    def clear_cache(cls, excluded_items = None, cache_dir = None):
-        """
-        Clear all the on-disk cache items included in EntropyCacher.CACHE_IDS.
-
-        @keyword excluded_items: list of items to exclude from cleaning
-        @type excluded_items: list
-        @keyword cache_dir: alternative cache directory
-        @type cache_dir: string
-        """
-        if excluded_items is None:
-            excluded_items = []
-        for key, value in EntropyCacher.CACHE_IDS.items():
-            if key in excluded_items:
-                continue
-            cls.clear_cache_item(value, cache_dir = cache_dir)
 
 class MtimePingus(object):
 

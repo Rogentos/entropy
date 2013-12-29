@@ -11,30 +11,29 @@
 """
 import os
 import collections
-import copy
 import hashlib
-import multiprocessing
-import threading
 
-from entropy.const import etpConst, const_debug_write, const_isstring, \
+from entropy.const import etpConst, const_debug_write, \
     const_isnumber, const_convert_to_rawstring, const_convert_to_unicode, \
     const_debug_enabled, const_file_readable
 from entropy.exceptions import RepositoryError, SystemDatabaseError, \
     DependenciesNotFound, DependenciesNotRemovable, DependenciesCollision
 from entropy.graph import Graph
 from entropy.misc import Lifo
-from entropy.cache import EntropyCacher
 from entropy.output import bold, darkgreen, darkred, blue, purple, teal, brown
 from entropy.i18n import _
 from entropy.db.exceptions import IntegrityError, OperationalError, \
-    DatabaseError, InterfaceError
+    DatabaseError, InterfaceError, Error as EntropyRepositoryError
 from entropy.db.skel import EntropyRepositoryBase
 from entropy.client.interfaces.db import InstalledPackagesRepository
+from entropy.client.misc import sharedinstlock
 
 import entropy.dep
 
+
 class CalculatorsMixin:
 
+    @sharedinstlock
     def dependencies_test(self):
 
         # get all the installed packages
@@ -187,7 +186,9 @@ class CalculatorsMixin:
         if self.xcache and use_cache:
             sha = hashlib.sha1()
 
-            cache_s = "a{%s}mr{%s}ms{%s}rh{%s}mf{%s}er{%s}ar{%s}s{%s;%s;%s}" % (
+            cache_fmt = "a{%s}mr{%s}ms{%s}rh{%s}mf{%s}"
+            cache_fmt += "er{%s}ar{%s}m{%s}cm{%s}s{%s;%s;%s}"
+            cache_s = cache_fmt % (
                 atom,
                 ";".join(match_repo),
                 match_slot,
@@ -195,13 +196,14 @@ class CalculatorsMixin:
                 mask_filter,
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 multi_match,
                 multi_repo,
                 extended_results)
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['atom_match'], sha.hexdigest(),)
+            cache_key = "atom_match/atom_match_%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -366,18 +368,19 @@ class CalculatorsMixin:
         if self.xcache and use_cache:
             sha = hashlib.sha1()
 
-            cache_s = "k{%s}re{%s}de{%s}rh{%s}er{%s}ar{%s}" % (
+            cache_s = "k{%s}re{%s}de{%s}rh{%s}m{%s}cm{%s}er{%s}ar{%s}" % (
                 keyword,
                 ";".join(repositories),
                 description,
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['atom_search'], sha.hexdigest(),)
+            cache_key = "atom_search/s_%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -644,11 +647,13 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|v4" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v6" % (
                 ";".join(sorted(dependencies)),
                 deep_deps,
                 inst_repo.checksum(),
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 relaxed_deps,
@@ -656,8 +661,7 @@ class CalculatorsMixin:
                 match_repo)
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s_%s" % (
-                EntropyCacher.CACHE_IDS['filter_satisfied_deps'],
+            cache_key = "unsat_deps/%s" % (
                 sha.hexdigest())
 
             cached = self._cacher.pop(cache_key)
@@ -1559,7 +1563,7 @@ class CalculatorsMixin:
                 continue
             if mymatch not in mydata:
                 # check if not found
-                myaction = self.get_package_action(mymatch)
+                myaction = self._get_package_action(mymatch)
                 # only if the package is not installed
                 if myaction == 1:
                     mydata.append(mymatch)
@@ -1579,7 +1583,7 @@ class CalculatorsMixin:
         if (conflict_match == new_match) or (new_match[1] == 1):
             return
 
-        action = self.get_package_action(
+        action = self._get_package_action(
             new_match, installed_package_id = client_package_id)
         if (action == 0) and (not deep_deps):
             return
@@ -1592,7 +1596,7 @@ class CalculatorsMixin:
         Lookup inverse dependencies and return them as a list of package
         matches.
         """
-        cmpstat = self.get_package_action(
+        cmpstat = self._get_package_action(
             match, installed_package_id = installed_package_id)
         if cmpstat == 0:
             return set()
@@ -1639,7 +1643,7 @@ class CalculatorsMixin:
                 mymatch = self.atom_match(key_slot)
                 if mymatch[0] == -1:
                     continue
-                cmpstat = self.get_package_action(
+                cmpstat = self._get_package_action(
                     mymatch, installed_package_id = inst_package_id)
                 if cmpstat == 0:
                     continue
@@ -1742,7 +1746,7 @@ class CalculatorsMixin:
                 continue
 
             # do we already have the latest version installed?
-            cmpstat = self.get_package_action(
+            cmpstat = self._get_package_action(
                 (package_id, repository_id),
                 installed_package_id = inst_package_id)
             if cmpstat == 0:
@@ -1875,19 +1879,20 @@ class CalculatorsMixin:
         cache_key = None
 
         if self.xcache:
-            cache_s = "%s|%s|%s|%s|%s|%s|r4" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|r6" % (
                 match,
                 installed_package_id,
                 inst_repo.checksum(),
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
             )
             sha = hashlib.sha1()
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['library_breakage'], sha.hexdigest(),)
+            cache_key = "library_breakage/%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -2010,7 +2015,7 @@ class CalculatorsMixin:
         for _package_id, _repository_id in found_matches:
             _match = _package_id, _repository_id
 
-            cmpstat = self.get_package_action(_match)
+            cmpstat = self._get_package_action(_match)
             if cmpstat == 0:
                 continue
 
@@ -2065,7 +2070,7 @@ class CalculatorsMixin:
                 continue
             pkg_match = package_id, repository_id
 
-            cmpstat = self.get_package_action(
+            cmpstat = self._get_package_action(
                 pkg_match, installed_package_id = inst_package_id)
             if cmpstat == 0:
                 continue
@@ -2160,7 +2165,7 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v4" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v6" % (
                 ";".join(["%s" % (x,) for x in sorted(package_matches)]),
                 empty_deps,
                 deep_deps,
@@ -2170,15 +2175,15 @@ class CalculatorsMixin:
                 recursive,
                 inst_repo.checksum(),
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 # needed when users do bogus things like editing config files
                 # manually (branch setting)
                 self._settings['repositories']['branch'])
 
             sha.update(const_convert_to_rawstring(cache_s))
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['dep_tree'],
-                sha.hexdigest())
+            cache_key = "deptree/dep_tree_%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -2351,12 +2356,62 @@ class CalculatorsMixin:
         depends -= remove_depends
         return depends
 
-    def _is_installed_package_id_in_system_mask(self, package_id):
-        cl_set = self.ClientSettings()
-        mask_installed = cl_set['system_mask']['repos_installed']
-        if package_id in mask_installed:
-            return True
-        return False
+    def _get_installed_packages_system_mask(self):
+        """
+        Get the installed packages matches system mask metadata.
+        """
+        sha = hashlib.sha1()
+
+        inst_repo = self.installed_repository()
+        cache_s = "%s|%s|v1" % (
+            inst_repo.checksum(),
+            self._settings['repositories']['branch'])
+
+        sha.update(const_convert_to_rawstring(cache_s))
+        cache_key = "system_mask/mask_%s" % (sha.hexdigest(),)
+
+        if self.xcache:
+            cached = self._cacher.pop(cache_key)
+            if cached is not None:
+                return cached
+
+        settings = self.Settings()
+        cl_settings = self.ClientSettings()
+        repo_settings = cl_settings['repositories']
+        repos_mask_list = repo_settings['system_mask']
+        m_list = repos_mask_list + settings['system_mask']
+
+        mc_cache = set()
+        mask_installed = []
+        mask_installed_keys = {}
+
+        for atom in m_list:
+            try:
+                m_ids, m_r = inst_repo.atomMatch(
+                    atom, multiMatch = True)
+                if m_r != 0:
+                    continue
+            except EntropyRepositoryError:
+                continue
+
+            mykey = entropy.dep.dep_getkey(atom)
+            obj = mask_installed_keys.setdefault(mykey, set())
+            for m_id in m_ids:
+                if m_id in mc_cache:
+                    continue
+                mc_cache.add(m_id)
+                mask_installed.append(m_id)
+                obj.add(m_id)
+
+        data = {
+            'ids': mask_installed,
+            'keys': mask_installed_keys,
+        }
+
+        if self.xcache:
+            self._cacher.push(cache_key, data, async = False)
+
+        return data
 
     DISABLE_NEEDED_SCANNING = os.getenv("ETP_DISABLE_ELF_NEEDED_SCANNING")
 
@@ -2389,7 +2444,7 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "ma{%s}s{%s;%s;%s;%s;%s;%s;%s;%s;%s}v2" % (
+            cache_s = "ma{%s}s{%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s}v4" % (
                 ";".join(["%s" % (x,) for x in sorted(matched_atoms)]),
                 deep,
                 recursive,
@@ -2398,13 +2453,14 @@ class CalculatorsMixin:
                 elf_needed_scanning,
                 inst_repo.checksum(),
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['depends_tree'], sha.hexdigest(),)
+            cache_key = "depends/tree_%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -2423,6 +2479,8 @@ class CalculatorsMixin:
         deep_dep_map = {}
         filter_multimatch_cache = {}
         needed_providers_left = {}
+
+        system_mask_data = self._get_installed_packages_system_mask()
 
         # post-dependencies won't be pulled in
         pdepend_id = etpConst['dependency_type_ids']['pdepend_id']
@@ -2463,8 +2521,7 @@ class CalculatorsMixin:
                                 % ((mydep, m_repo_id),))
                         continue
                     if m_repo_db is self.installed_repository():
-                        if self._is_installed_package_id_in_system_mask(
-                            mydep):
+                        if mydep in system_mask_data['ids']:
                             if const_debug_enabled():
                                 const_debug_write(__name__,
                                 "\n_generate_reverse_dependency_tree [md:%s] "
@@ -2806,6 +2863,7 @@ class CalculatorsMixin:
 
         return deptree
 
+    @sharedinstlock
     def calculate_masked_packages(self, use_cache = True):
         """
         Compute a list of masked packages. For masked packages it is meant
@@ -2818,9 +2876,9 @@ class CalculatorsMixin:
             [((package_id, repository_id), reason_id), ...]
         @rtype: list
         """
-        cache_key = "%s%s_v2" % (
-            EntropyCacher.CACHE_IDS['world_masked'],
-            self._get_available_packages_hash())
+        cache_key = "available/masked_%s_v2" % (
+            self._get_available_packages_hash(),
+        )
 
         if use_cache and self.xcache:
             cached = self._cacher.pop(cache_key)
@@ -2857,6 +2915,7 @@ class CalculatorsMixin:
 
         return masked
 
+    @sharedinstlock
     def calculate_available_packages(self, use_cache = True):
         """
         Compute a list of available packages in repositories. For available
@@ -2867,9 +2926,10 @@ class CalculatorsMixin:
         @return: list of available package matches
         @rtype: list
         """
-        c_hash = self._get_available_packages_hash()
+        cache_key = "available_packages/%s" % (
+            self._get_available_packages_hash(),)
         if use_cache and self.xcache:
-            cached = self._get_available_packages_cache(c_hash)
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -2904,10 +2964,11 @@ class CalculatorsMixin:
             available += myavailable[:]
 
         if self.xcache:
-            self._cacher.push("%s%s" % (
-                EntropyCacher.CACHE_IDS['world_available'], c_hash), available)
+            self._cacher.push(cache_key, available)
+
         return available
 
+    @sharedinstlock
     def calculate_critical_updates(self, use_cache = True):
 
         # check if we are branch migrating
@@ -2916,9 +2977,32 @@ class CalculatorsMixin:
         if const_file_readable(in_branch_upgrade):
             return set(), []
 
-        repo_hash = self._repositories_hash()
+        enabled_repos = self._filter_available_repositories()
+        repo_order = [x for x in self._settings['repositories']['order'] if
+            x in enabled_repos]
+
+        inst_repo = self.installed_repository()
+
+        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|v4" % (
+            self._repositories_hash(),
+            enabled_repos,
+            inst_repo.checksum(),
+            self._all_repositories_hash(),
+            self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
+            ";".join(sorted(self._settings['repositories']['available'])),
+            repo_order,
+            # needed when users do bogus things like editing config files
+            # manually (branch setting)
+            self._settings['repositories']['branch'],
+        )
+        sha = hashlib.sha1()
+        sha.update(const_convert_to_rawstring(cache_s))
+
+        cache_key = "critical/%s" % (sha.hexdigest(),)
+
         if use_cache and self.xcache:
-            cached = self._get_critical_updates_cache(repo_hash = repo_hash)
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -2948,13 +3032,11 @@ class CalculatorsMixin:
         data = (atoms, matches)
 
         if self.xcache:
-            c_hash = self._get_critical_update_cache_hash(repo_hash)
-            self._cacher.push(
-                "%s%s" % (EntropyCacher.CACHE_IDS['critical_update'], c_hash,),
-                    data, async = False)
+            self._cacher.push(cache_key, data, async = False)
 
         return data
 
+    @sharedinstlock
     def calculate_security_updates(self, use_cache = True):
         """
         Return a list of security updates available using Entropy Security
@@ -2994,6 +3076,7 @@ class CalculatorsMixin:
 
         return sec_updates
 
+    @sharedinstlock
     def calculate_updates(self, empty = False, use_cache = True,
         critical_updates = True, quiet = False):
         """
@@ -3038,10 +3121,34 @@ class CalculatorsMixin:
                     'critical_found': True,
                     }
 
-        repo_hash = self._repositories_hash()
+        inst_repo = self.installed_repository()
+        ignore_spm_downgrades = misc_settings['ignore_spm_downgrades']
+        enabled_repos = self._filter_available_repositories()
+        repo_order = [x for x in self._settings['repositories']['order'] if
+                      x in enabled_repos]
+
+        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v6" % (
+            self._repositories_hash(),
+            empty,
+            enabled_repos,
+            inst_repo.checksum(),
+            self._all_repositories_hash(),
+            self._settings.packages_configuration_hash(),
+            self._settings_client_plugin.packages_configuration_hash(),
+            ";".join(sorted(self._settings['repositories']['available'])),
+            repo_order,
+            ignore_spm_downgrades,
+            # needed when users do bogus things like editing config files
+            # manually (branch setting)
+            self._settings['repositories']['branch'],
+        )
+
+        sha = hashlib.sha1()
+        sha.update(const_convert_to_rawstring(cache_s))
+        cache_key = "updates/%s_v1" % (sha.hexdigest(),)
+
         if use_cache and self.xcache:
-            cached = self._get_updates_cache(empty_deps = empty,
-                repo_hash = repo_hash)
+            cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
@@ -3050,8 +3157,6 @@ class CalculatorsMixin:
         enabled_repos = self._filter_available_repositories()
         match_repos = tuple([x for x in \
             self._settings['repositories']['order'] if x in enabled_repos])
-
-        ignore_spm_downgrades = misc_settings['ignore_spm_downgrades']
 
         # get all the installed packages
         try:
@@ -3254,9 +3359,7 @@ class CalculatorsMixin:
             }
 
         if self.xcache:
-            c_hash = self._get_updates_cache_hash(repo_hash, empty,
-                ignore_spm_downgrades)
-            self._cacher.push(c_hash, outcome, async = False)
+            self._cacher.push(cache_key, outcome, async = False)
             self._cacher.sync()
 
         if not update:
@@ -3270,6 +3373,7 @@ class CalculatorsMixin:
 
         return outcome
 
+    @sharedinstlock
     def calculate_orphaned_packages(self, use_cache = True):
         """
         Collect Installed Packages that are no longer available
@@ -3423,6 +3527,7 @@ class CalculatorsMixin:
 
         return maskedtree
 
+    @sharedinstlock
     def check_package_update(self, atom, deep = False):
 
         inst_repo = self.installed_repository()
@@ -3431,19 +3536,19 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "{%s;%s;%s;%s;%s;%s}v2" % (
+            cache_s = "{%s;%s;%s;%s;%s;%s;%s;%s}v4" % (
                 atom,
                 deep,
                 inst_repo.checksum(),
                 self._all_repositories_hash(),
+                self._settings.packages_configuration_hash(),
+                self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))
 
-            cache_key = "%s%s" % (
-                EntropyCacher.CACHE_IDS['check_package_update'],
-                sha.hexdigest(),)
+            cache_key = "check_update/package_update_%s" % (sha.hexdigest(),)
 
             cached = self._cacher.pop(cache_key)
             if cached is not None:
@@ -3475,6 +3580,7 @@ class CalculatorsMixin:
 
         return found, matched
 
+    @sharedinstlock
     def validate_package_removal(self, package_id, repo_id = None):
         """
         Determine whether given package identifier is allowed to be removed.
@@ -3499,13 +3605,12 @@ class CalculatorsMixin:
 
         pkgatom = dbconn.retrieveAtom(package_id)
         pkgkey = entropy.dep.dep_getkey(pkgatom)
-        mask_data = self.ClientSettings()['system_mask']
-        mask_installed_keys = mask_data['repos_installed_keys']
+        system_mask_data = self._get_installed_packages_system_mask()
 
         # cannot check this for pkgs not coming from installed pkgs repo
         if dbconn is self.installed_repository():
-            if self._is_installed_package_id_in_system_mask(package_id):
-                package_ids = mask_installed_keys.get(pkgkey)
+            if package_id in system_mask_data['ids']:
+                package_ids = system_mask_data['keys'].get(pkgkey)
                 if not package_ids:
                     return False
                 if len(package_ids) > 1:
@@ -3543,6 +3648,7 @@ class CalculatorsMixin:
             return False
         return True
 
+    @sharedinstlock
     def get_masked_packages(self, package_matches):
         """
         Return a list of masked packages which are dependencies of given package
@@ -3565,13 +3671,14 @@ class CalculatorsMixin:
             masks.update(mymasks)
         return masks
 
+    @sharedinstlock
     def get_removal_queue(self, package_identifiers, deep = False,
         recursive = True, empty = False, system_packages = True):
         """
         Return removal queue (list of installed packages identifiers).
 
         @param package_identifiers: list of package identifiers proposed
-            for removal (returned by Client.installed_repository().listAllPackageIds())
+            for removal (returned by inst_repo.listAllPackageIds())
         @type package_identifiers: list
         @keyword deep: deeply scan inverse dependencies to include unused
             packages
@@ -3602,6 +3709,7 @@ class CalculatorsMixin:
             queue.extend(treeview[x])
         return [x for x, y in queue]
 
+    @sharedinstlock
     def get_reverse_queue(self, package_matches, deep = False,
         recursive = True, empty = False, system_packages = True):
         """
@@ -3634,6 +3742,7 @@ class CalculatorsMixin:
             queue.extend(treeview[x])
         return queue
 
+    @sharedinstlock
     def get_install_queue(self, package_matches, empty, deep,
         relaxed = False, build = False, quiet = False, recursive = True,
         only_deps = False, critical_updates = True):
@@ -3757,10 +3866,11 @@ class CalculatorsMixin:
 
         # filter out packages that are in actionQueue comparing key + slot
         if install and removal:
+            inst_repo = self.installed_repository()
+
             myremmatch = {}
             for rm_package_id in removal:
-                keyslot = self.installed_repository().retrieveKeySlot(
-                    rm_package_id)
+                keyslot = inst_repo.retrieveKeySlot(rm_package_id)
                 # check if users removed package_id while this
                 # whole instance is running
                 if keyslot is None:

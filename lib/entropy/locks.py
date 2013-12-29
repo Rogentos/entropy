@@ -29,7 +29,7 @@ class SimpleFileLock(object):
     """
 
     @classmethod
-    def acquire_lock(cls, lock_file, lock_map):
+    def acquire(cls, lock_file, lock_map):
         """
         Make possible to protect a code region using an EXCLUSIVE, non-blocking
         file lock. A lock map (dict) is required in order to register the lock
@@ -62,7 +62,7 @@ class SimpleFileLock(object):
             raise
 
     @classmethod
-    def release_lock(cls, lock_file, lock_map):
+    def release(cls, lock_file, lock_map):
         """
         Release a previously acquired lock through acquire_lock().
 
@@ -96,16 +96,13 @@ class ResourceLock(object):
 
     _TLS = threading.local()
 
-    def __init__(self, lock_map, lock_mutex, output=None):
+    def __init__(self, output=None):
         """
         Object constructor.
 
         @keyword output: a TextInterface interface
         @type output: entropy.output.TextInterface or None
         """
-        self._lock_map = lock_map
-        self._lock_mutex = lock_mutex
-
         if output is not None:
             self._out = output
         else:
@@ -117,19 +114,34 @@ class ResourceLock(object):
         """
         raise NotImplementedError()
 
-    def _file_lock_setup(self, file_path):
+    def is_already_acquired(self):
         """
-        Setup _FILE_LOCK_MAP for file_path, allocating locking information.
+        Return whether the current thread has already acquired the
+        lock (which is reentrant).
         """
-        mapped = self._lock_map.get(file_path)
+        mapped = self._file_lock_setup()
+        return mapped['recursed']
+
+    def _file_lock_setup(self):
+        """
+        Setup the locking status dict for self.path().
+        """
+        lock_map = getattr(self._TLS, "lock_map", None)
+        if lock_map is None:
+            lock_map = {}
+            self._TLS.lock_map = lock_map
+
+        file_path = self.path()
+        mapped = lock_map.get(file_path)
         if mapped is None:
             mapped = {
                 'count': 0,
                 'ref': None,
                 'path': file_path,
                 'shared': None,
+                'recursed': False,
             }
-            self._lock_map[file_path] = mapped
+            lock_map[file_path] = mapped
         return mapped
 
     def _lock_resource(self, blocking, shared):
@@ -137,46 +149,41 @@ class ResourceLock(object):
         Internal function that does the locking given a lock
         file path.
         """
-        lock_path = self.path()
+        mapped = self._file_lock_setup()
 
-        with self._lock_mutex:
-            mapped = self._file_lock_setup(lock_path)
+        # I asked for an exclusive lock, but
+        # I am only holding a shared one, don't
+        # return True.
+        want_exclusive_when_shared = not shared and mapped['shared']
 
-            # I asked for an exclusive lock, but
-            # I am only holding a shared one, don't
-            # return True.
-            want_exclusive_when_shared = not shared and mapped['shared']
+        if mapped['ref'] is not None:
+            if not want_exclusive_when_shared:
+                # reentrant lock, already acquired
+                mapped['count'] += 1
+                return True
 
-            if mapped['ref'] is not None:
-                if not want_exclusive_when_shared:
-                    # reentrant lock, already acquired
-                    mapped['count'] += 1
-                    return True
+        else:
+            mapped['shared'] = shared
 
-            else:
-                mapped['shared'] = shared
+        # watch for deadlocks using TLS
+        if mapped['recursed'] and want_exclusive_when_shared:
+            # deadlock, raise exception
+            raise RuntimeError(
+                "want exclusive lock when shared acquired")
 
-            # watch for deadlocks using TLS
-            recursed = getattr(self._TLS, "recursed", False)
-            if recursed and want_exclusive_when_shared:
-                # deadlock, raise exception
-                raise RuntimeError(
-                    "want exclusive lock when shared acquired")
+        # not the same thread requested an exclusive lock when shared
+        mapped['recursed'] = True
+        # fall through, we won't deadlock
 
-            # not the same thread requested an exclusive lock when shared
-            self._TLS.recursed = True
-            # fall through, we won't deadlock
-
-            path = mapped['path']
+        path = mapped['path']
 
         acquired, flock_f = self._file_lock_create(
             path, blocking=blocking, shared=shared)
 
         if acquired:
-            with self._lock_mutex:
-                mapped['count'] += 1
-                if flock_f is not None:
-                    mapped['ref'] = flock_f
+            mapped['count'] += 1
+            if flock_f is not None:
+                mapped['ref'] = flock_f
 
         return acquired
 
@@ -185,31 +192,28 @@ class ResourceLock(object):
         Internal function that does the unlocking of a given
         lock file.
         """
-        lock_path = self.path()
-        with self._lock_mutex:
+        mapped = self._file_lock_setup()
 
-            mapped = self._file_lock_setup(lock_path)
+        if mapped['count'] == 0:
+            raise RuntimeError("releasing a non-acquired lock")
 
-            if mapped['count'] == 0:
-                raise RuntimeError("releasing a non-acquired lock")
+        # decrement lock counter
+        if mapped['count'] > 0:
+            mapped['count'] -= 1
+        # if lock counter > 0, still locked
+        # waiting for other upper-level calls
+        if mapped['count'] > 0:
+            return
 
-            # decrement lock counter
-            if mapped['count'] > 0:
-                mapped['count'] -= 1
-            # if lock counter > 0, still locked
-            # waiting for other upper-level calls
-            if mapped['count'] > 0:
-                return
+        ref_obj = mapped['ref']
+        if ref_obj is not None:
+            # do not remove!
+            ref_obj.release()
+            ref_obj.close()
+            mapped['ref'] = None
 
-            ref_obj = mapped['ref']
-            if ref_obj is not None:
-                # do not remove!
-                ref_obj.release()
-                ref_obj.close()
-                mapped['ref'] = None
-
-            # allow the same thread to acquire the lock again.
-            self._TLS.recursed = False
+        # allow the same thread to acquire the lock again.
+        mapped['recursed'] = False
 
     def _file_lock_create(self, lock_path, blocking=False, shared=False):
         """
@@ -241,22 +245,43 @@ class ResourceLock(object):
         except OSError:
             pass
 
-        flock_f = FlockFile(lock_path, fd=fd)
-        if blocking:
-            if shared:
-                flock_f.acquire_shared()
-            else:
-                flock_f.acquire_exclusive()
-        else:
-            acquired = False
+        acquired = False
+        flock_f = None
+        try:
+            flock_f = FlockFile(lock_path, fd=fd)
+            if blocking:
+                if shared:
+                    flock_f.acquire_shared()
+                else:
+                    flock_f.acquire_exclusive()
+                acquired = True
+                return True, flock_f
+
+            # non blocking
             if shared:
                 acquired = flock_f.try_acquire_shared()
             else:
                 acquired = flock_f.try_acquire_exclusive()
             if not acquired:
                 return False, None
+            return True, flock_f
 
-        return True, flock_f
+        except Exception:
+            if flock_f is not None:
+                try:
+                    flock_f.close()
+                except (OSError, IOError):
+                    pass
+                flock_f = None
+            raise
+
+        finally:
+            if not acquired and flock_f is not None:
+                try:
+                    flock_f.close()
+                except (OSError, IOError):
+                    pass
+                flock_f = None
 
     def _wait_resource(self, shared):
         """
@@ -376,9 +401,6 @@ class EntropyResourcesLock(ResourceLock):
     only a handful of code paths require exclusive locking.
     """
 
-    _FILE_LOCK_MUTEX = threading.Lock()
-    _FILE_LOCK_MAP = {}
-
     # List of callables that will be triggered upon lock acquisition.
     # It can be used to execute cache cleanups.
     _POST_ACQUIRE_HOOK_LOCK = threading.Lock()
@@ -421,8 +443,6 @@ class EntropyResourcesLock(ResourceLock):
         @type output: entropy.output.TextInterface or None
         """
         super(EntropyResourcesLock, self).__init__(
-            EntropyResourcesLock._FILE_LOCK_MAP,
-            EntropyResourcesLock._FILE_LOCK_MUTEX,
             output=output)
 
     def path(self):
@@ -463,3 +483,36 @@ class EntropyResourcesLock(ResourceLock):
         if acquired:
             self._clear_resources_after_lock()
         return acquired
+
+
+class UpdatesNotificationResourceLock(ResourceLock):
+    """
+    This lock can be used to temporarily stop updates availability
+    notifications (like those sent by RigoDaemon) from taking
+    place. For instance, it is possible to acquire this lock in shared
+    mode in order to stop RigoDaemon from signaling the availability
+    of updates during an upgrade performed by Equo.  RigoDaemon
+    acquires the lock in exclusive NB mode for a short period of time
+    in order to ensure that it can signal updates availability.
+
+    If you want to run an install queue, acquire this in shared mode,
+    if you want to notify available updates, try to acquire this in
+    exclusive mode.
+    """
+
+    def __init__(self, output=None):
+        """
+        Object constructor.
+
+        @keyword output: a TextInterface interface
+        @type output: entropy.output.TextInterface or None
+        """
+        super(UpdatesNotificationResourceLock, self).__init__(
+            output=output)
+
+    def path(self):
+        """
+        Return the path to the lock file.
+        """
+        return os.path.join(etpConst['entropyrundir'],
+                            '.entropy.locks.SystemNotifications.lock')

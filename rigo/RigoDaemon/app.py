@@ -65,7 +65,7 @@ EntropyCacher.WRITEBACK_TIMEOUT = 120
 from entropy.const import etpConst, const_convert_to_rawstring, \
     initconfig_entropy_constants, const_debug_write, dump_signal, \
     const_mkstemp
-from entropy.locks import EntropyResourcesLock
+from entropy.locks import EntropyResourcesLock, UpdatesNotificationResourceLock
 from entropy.exceptions import DependenciesNotFound, \
     DependenciesCollision, DependenciesNotRemovable, SystemDatabaseError, \
     EntropyPackageException, InterruptError
@@ -815,6 +815,7 @@ class RigoDaemonService(dbus.service.Object):
         acquired = False
         started = False
         try:
+
             # cannot block in this thread (it's the MainThread)
             acquired = serializer.acquire(False)
             if not acquired:
@@ -1224,37 +1225,76 @@ class RigoDaemonService(dbus.service.Object):
         changes.
         Attention: this method is called with serializer acquired.
         """
+
+        # check whether we are allowed to send notifications
+        # to the user. Also, this is a best effort to stop
+        # nagging the user when Equo or other tools are
+        # installing packages.
+        # Internally, we use the activity mutex so there is no
+        # need to deal with this lock in our own action queue.
+        # We should sleep here rather than using non blocking
+        # locking because we want to eventually notify the user
+        # of the available updates.
+        notification_lock = UpdatesNotificationResourceLock(
+            output=self._entropy)
+
+        notif_acquired = False
+        schedule_new = False
         try:
-            # The probability that two subsequent calls to Equo or
-            # other clients are issued is usually high in the first
-            # seconds after the exclusive lock is released, so delay
-            # the execution by 20 seconds to avoid this.
-            # Note however that this is a one-time sleep, the wait
-            # timer doesn't restart from the beginning each time
-            # the exclusive lock is acquired by external sources.
-            sleep_t = 20.0
-            write_output("_installed_repository_updated: "
-                         "acquiring locks in 20 seconds...",
-                         debug=True)
-
-            time.sleep(sleep_t)
             with self._activity_mutex:
-                self._acquire_shared()
-                try:
-                    self._close_local_resources()
-                    self._entropy_setup()
 
-                    with self._rwsem.reader():
-                        self._installed_repository_updated_unlocked()
-                finally:
-                    self._release_shared()
+                notif_acquired = notification_lock.try_acquire_exclusive()
+                if not notif_acquired:
+                    # then give up and schedule a new signal callback as soon
+                    # as the notification lock is acquired
+                    schedule_new = True
+
+                else:
+                    self._acquire_shared()
+                    try:
+                        self._close_local_resources()
+                        self._entropy_setup()
+
+                        with self._rwsem.reader():
+                            self._installed_repository_updated_unlocked()
+                    finally:
+                        self._release_shared()
+
         finally:
             write_output("_installed_repository_updated: "
                          "releasing serializer (baton)",
                          debug=True)
-            # release the serializer object that our parent gave
-            # us.
-            serializer.release()
+            if notif_acquired:
+                notification_lock.release()
+
+            if not schedule_new:
+                # release the serializer object that our parent gave us.
+                # Note that if schedule_new is True, we're going to be
+                # called again. For this reason, we do not release the
+                # serializer lock in this case.
+                serializer.release()
+
+        if schedule_new:
+            write_output("_installed_repository_updated: "
+                         "notification lock held, scheduling a new "
+                         "check as soon as the lock is acquired.",
+                         debug=True)
+
+            def lock_sleep():
+                nlock = UpdatesNotificationResourceLock(
+                    output=self._entropy)
+                with nlock.exclusive():  # blocks
+                    task = ParallelTask(
+                        self._installed_repository_updated,
+                        serializer)
+                    task.name = "RescheduledInstalledRepositoryCheckHandler"
+                    task.daemon = True
+                    task.start()
+
+            stask = ParallelTask(lock_sleep)
+            stask.name = "SleepingOnUpdatesNotificationResourceLock"
+            stask.daemon = True
+            stask.start()
 
     def _installed_repository_updated_unlocked(self):
         """

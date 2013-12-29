@@ -155,7 +155,7 @@ Tools to rescue the running system.
             return parser.print_help, []
 
         self._nsargs = nsargs
-        return self._call_locked, [nsargs.func]
+        return self._call_exclusive, [nsargs.func]
 
     def bashcomp(self, last_arg):
         """
@@ -670,8 +670,8 @@ Tools to rescue the running system.
             rc = _("Yes")
             accepted = True
             if ask:
-                rc = entropy_client.ask_question(">>   %s" % (
-                    _("Continue ?"),))
+                rc = entropy_client.ask_question(
+                    _("Continue ?"))
                 if rc != _("Yes"):
                     accepted = False
 
@@ -710,8 +710,7 @@ Tools to rescue the running system.
         if to_be_added and not pretend:
 
             if ask:
-                rc = entropy_client.ask_question(">>   %s" % (
-                    _("Continue ?"),) )
+                rc = entropy_client.ask_question(_("Continue ?"))
                 if rc != _("Yes"):
                     return 1
 
