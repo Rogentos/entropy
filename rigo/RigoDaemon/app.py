@@ -68,7 +68,7 @@ from entropy.const import etpConst, const_convert_to_rawstring, \
 from entropy.locks import EntropyResourcesLock, UpdatesNotificationResourceLock
 from entropy.exceptions import DependenciesNotFound, \
     DependenciesCollision, DependenciesNotRemovable, SystemDatabaseError, \
-    EntropyPackageException, InterruptError
+    EntropyPackageException, InterruptError, RepositoryError
 from entropy.i18n import _
 from entropy.misc import LogFile, ParallelTask, TimeScheduled, \
     ReadersWritersSemaphore
@@ -100,6 +100,8 @@ if DAEMON_LOGGING:
     # redirect possible exception tracebacks to log file
     sys.stderr = DAEMON_LOG
     sys.stdout = DAEMON_LOG
+
+_MAIN_THREAD = threading.current_thread()
 
 
 def get_entropy_webservice(entropy_client, repository_id, tx_cb = False):
@@ -167,6 +169,7 @@ install_exception_handler()
 class Entropy(Client):
 
     _DAEMON = None
+    _ACTION_QUEUE_THREAD = None
 
     def init_singleton(self):
         Client.init_singleton(
@@ -180,11 +183,12 @@ class Entropy(Client):
             )
 
     @staticmethod
-    def set_daemon(daem):
+    def set_daemon(daem, worker):
         """
         Bind the Entropy Singleton instance to the DBUS Daemon.
         """
         Entropy._DAEMON = daem
+        Entropy._ACTION_QUEUE_THREAD = worker
         DaemonUrlFetcher.set_daemon(daem)
         DaemonMultipleUrlFetcher.set_daemon(daem)
 
@@ -202,8 +206,31 @@ class Entropy(Client):
                 text, header, footer, back, importance,
                 level, count_c, count_t, percent, _raw)
 
-Client.__singleton_class__ = Entropy
+    @classmethod
+    def isMainThread(cls, thread_obj):
+        if thread_obj is Entropy._ACTION_QUEUE_THREAD:
+            return True
+        if thread_obj is _MAIN_THREAD:
+            return True
+        return False
 
+    @classmethod
+    def get_repository(cls, repository_id):
+        """
+        Monkey patch repository class objects with an appropriate
+        version of isMainThread.
+
+        This avoids EntropySQLRepository instances to start multiple
+        cleanup monitors for the ActionQueueWorkerThread, which can
+        be considered a second "MainThread" for repository instances.
+        """
+        repo_class = super(Entropy, cls).get_repository(repository_id)
+        repo_class.isMainThread = Entropy.isMainThread
+        return repo_class
+
+
+Client.__singleton_class__ = Entropy
+TextInterface.output = Entropy.output
 
 class DaemonUrlFetcher(UrlFetcher):
 
@@ -699,7 +726,7 @@ class RigoDaemonService(dbus.service.Object):
             'path': None
         }
 
-        Entropy.set_daemon(self)
+        Entropy.set_daemon(self, self._action_queue_task)
         self._entropy = Entropy()
         # keep all the resources closed
         self._close_local_resources()
@@ -1642,6 +1669,30 @@ class RigoDaemonService(dbus.service.Object):
                 else:
                     self._maybe_signal_preserved_libraries()
 
+                    # Clear Source Package Manager resources, do
+                    # it before releasing any locks here or
+                    # we may trigger an unlikely but possible race
+                    try:
+                        spm = self._entropy.Spm()
+                        spm.clear()
+                    except Exception as err:
+                        write_output("_action_queue_worker_thread: "
+                                     "unexpected error clearing SPM resources: "
+                                     "%s" % (repr(err),))
+
+                    # Also make sure to clear local Entropy repository caches
+                    for repository_id in self._entropy.repositories():
+                        try:
+                            repo = self._entropy.open_repository(repository_id)
+                        except RepositoryError:
+                            continue
+                        repo.clearCache()
+
+                    # Clear installed packages repository cache as well
+                    inst_repo = self._entropy.installed_repository()
+                    with inst_repo.shared():
+                        inst_repo.clearCache()
+
                     try:
                         app_log_path = self._read_app_management_notes()
                     except Exception as err:
@@ -1656,6 +1707,7 @@ class RigoDaemonService(dbus.service.Object):
                                      "._unbusy: already "
                                      "available, wtf !?!?")
                             # wtf??
+
                     self._release_shared()
                     success = outcome == AppTransactionOutcome.SUCCESS
                     write_output("_action_queue_worker_thread"

@@ -36,12 +36,6 @@ from entropy.db.exceptions import Warning, Error, InterfaceError, \
     DatabaseError, DataError, OperationalError, IntegrityError, \
     InternalError, ProgrammingError, NotSupportedError
 
-def _get_main_thread():
-    for _thread in threading.enumerate():
-        if _thread.name == "MainThread":
-            return _thread
-    raise AssertionError("Where the fuck is the MainThread?")
-
 
 class SQLConnectionWrapper(object):
 
@@ -614,7 +608,11 @@ class EntropySQLRepository(EntropyRepositoryBase):
     # "UPDATE OR REPLACE" dialect
     _UPDATE_OR_REPLACE = None
 
-    _MAIN_THREAD = _get_main_thread()
+    _MAIN_THREAD = threading.current_thread()
+
+    @classmethod
+    def isMainThread(cls, thread_obj):
+        return thread_obj is cls._MAIN_THREAD
 
     # Generic repository name to use when none is given.
     GENERIC_NAME = "__generic__"
@@ -699,7 +697,7 @@ class EntropySQLRepository(EntropyRepositoryBase):
         The allocated thread is a daemon thread, so it should
         be safe to use join() on daemon threads as well.
         """
-        if current_thread is self._MAIN_THREAD:
+        if self.isMainThread(current_thread):
             const_debug_write(
                 __name__,
                 "NOT setting up a cleanup monitor for the MainThread")

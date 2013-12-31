@@ -55,7 +55,8 @@ from entropy.misc import ParallelTask
 from entropy.exceptions import EntropyPackageException
 
 from entropy.i18n import _, ngettext
-from entropy.output import darkgreen, brown, darkred, red, blue
+from entropy.output import darkgreen, brown, darkred, red, blue, \
+    MESSAGE_HEADER, ERROR_MESSAGE_HEADER, WARNING_MESSAGE_HEADER
 
 import entropy.tools
 
@@ -1197,10 +1198,13 @@ class RigoServiceController(GObject.Object):
             return
 
         color_func = darkgreen
+        hdr = MESSAGE_HEADER
         if level == "warning":
             color_func = brown
+            hdr = WARNING_MESSAGE_HEADER
         elif level == "error":
             color_func = darkred
+            hdr = ERROR_MESSAGE_HEADER
 
         count_str = ""
         if count:
@@ -1216,10 +1220,10 @@ class RigoServiceController(GObject.Object):
         # reset cursor
         self._terminal.feed_child(chr(27) + '[2K')
         if back:
-            msg = "\r" + color_func(">>") + " " + header + count_str + text \
+            msg = "\r" + color_func(hdr) + " " + header + count_str + text \
                 + footer
         else:
-            msg = "\r" + color_func(">>") + " " + header + count_str + text \
+            msg = "\r" + color_func(hdr) + " " + header + count_str + text \
                 + footer + "\r\n"
 
         self._terminal.feed_child(msg)
@@ -1273,7 +1277,8 @@ class RigoServiceController(GObject.Object):
                 "_resources_lock_request_signal._resources_lock: "
                 "enter (sleep)")
 
-            self._shared_locker.lock()
+            # always execute this from the MainThread, since the lock uses TLS
+            self._execute_mainloop(self._shared_locker.lock)
             clear_avc = True
             if activity in (
                 DaemonActivityStates.MANAGING_APPLICATIONS,
@@ -1317,7 +1322,9 @@ class RigoServiceController(GObject.Object):
                             __name__,
                             "_resources_unlock_request_signal: "
                             "_update_repositories accepted, unlocking")
-                        self._shared_locker.unlock()
+                        # always execute this from the MainThread,
+                        # since the lock uses TLS
+                        self._execute_mainloop(self._shared_locker.unlock)
 
                 # another client, bend over XD
                 # LocalActivityStates value will be atomically
@@ -1337,7 +1344,10 @@ class RigoServiceController(GObject.Object):
 
                 def _unlocker():
                     self._release_local_resources() # CANBLOCK
-                    self._shared_locker.unlock()
+                    # always execute this from the MainThread,
+                    # since the lock uses TLS
+                    self._execute_mainloop(self._shared_locker.unlock)
+
                 task = ParallelTask(_unlocker)
                 task.daemon = True
                 task.name = "UpdateRepositoriesInternal"
@@ -1354,93 +1364,6 @@ class RigoServiceController(GObject.Object):
                 const_debug_write(
                     __name__,
                     "_resources_unlock_request_signal: "
-                    "not accepting RigoDaemon resources unlock request, "
-                    "local activity: %s" % (local_activity,))
-
-        elif activity == DaemonActivityStates.MANAGING_APPLICATIONS:
-
-            local_activity = self.local_activity()
-            if local_activity == LocalActivityStates.READY:
-
-                def _application_request():
-                    self._release_local_resources(clear_avc=False)
-                    accepted = self._application_request(
-                        None, None, master=False)
-                    if accepted:
-                        const_debug_write(
-                            __name__,
-                            "_resources_unlock_request_signal: "
-                            "_application_request accepted, unlocking")
-                        self._shared_locker.unlock()
-
-                # another client, bend over XD
-                # LocalActivityStates value will be atomically
-                # switched in the above thread.
-                task = ParallelTask(_application_request)
-                task.daemon = True
-                task.name = "ApplicationRequestExternal"
-                task.start()
-
-                const_debug_write(
-                    __name__,
-                    "_resources_unlock_request_signal: "
-                    "somebody called app request, starting here too")
-
-            elif local_activity == \
-                    LocalActivityStates.MANAGING_APPLICATIONS:
-                self._release_local_resources(clear_avc=False)
-                self._shared_locker.unlock()
-
-                const_debug_write(
-                    __name__,
-                    "_resources_unlock_request_signal: "
-                    "it's been us calling manage apps")
-                # it's been us calling it, ignore request
-                return
-
-        elif activity == DaemonActivityStates.UPGRADING_SYSTEM:
-
-            local_activity = self.local_activity()
-            if local_activity == LocalActivityStates.READY:
-
-                def _upgrade_system():
-                    accepted = self._upgrade_system(
-                        False, master=False)
-                    if accepted:
-                        const_debug_write(
-                            __name__,
-                            "_resources_unlock_request_signal: "
-                            "_upgrade_system accepted, unlocking")
-                        self._shared_locker.unlock()
-
-                # another client, bend over XD
-                # LocalActivityStates value will be atomically
-                # switched in the above thread.
-                task = ParallelTask(_upgrade_system)
-                task.daemon = True
-                task.name = "UpgradeSystemExternal"
-                task.start()
-
-                const_debug_write(
-                    __name__,
-                    "_resources_unlock_request_signal: "
-                    "somebody called sys upgrade, starting here too")
-
-            elif local_activity == \
-                    LocalActivityStates.UPGRADING_SYSTEM:
-                self._shared_locker.unlock()
-
-                const_debug_write(
-                    __name__,
-                    "_resources_unlock_request_signal: "
-                    "it's been us calling system upgrade")
-                # it's been us calling it, ignore request
-                return
-
-            else:
-                const_debug_write(
-                    __name__,
-                    "_resources_unlock_request_signal 2: "
                     "not accepting RigoDaemon resources unlock request, "
                     "local activity: %s" % (local_activity,))
 
@@ -2525,12 +2448,18 @@ class RigoServiceController(GObject.Object):
                         package_id, repository_id,
                         package_path, daemon_action,
                         simulate)
+
             def _enqueue_callback():
                 return self._execute_mainloop(_enqueue)
 
+            def _undo_callback():
+                def _emit():
+                    self.emit("application-abort", app, daemon_action)
+                GLib.idle_add(_emit)
+
             box = QueueActionNotificationBox(
                 app, daemon_action,
-                _enqueue_callback, None)
+                _enqueue_callback, _undo_callback, None)
             self._nc.append_safe(box)
             const_debug_write(
                 __name__,
