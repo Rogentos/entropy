@@ -32,7 +32,7 @@ from entropy.locks import ResourceLock
 
 from entropy.db.exceptions import Warning, Error, InterfaceError, \
     DatabaseError, DataError, OperationalError, IntegrityError, \
-    InternalError, ProgrammingError, NotSupportedError
+    InternalError, ProgrammingError, NotSupportedError, LockAcquireError
 from entropy.db.sql import EntropySQLRepository, SQLConnectionWrapper, \
     SQLCursorWrapper
 
@@ -281,9 +281,15 @@ class EntropySQLiteRepository(EntropySQLRepository):
                 raise
 
         if update:
-            with self.exclusive(), self._schema_update_lock:
-                self._schema_update_run = True
-                self._databaseSchemaUpdates()
+            try:
+                with self.exclusive(), self._schema_update_lock:
+                    self._schema_update_run = True
+                    self._databaseSchemaUpdates()
+            except LockAcquireError as err:
+                const_debug_write(
+                    __name__,
+                    "_maybeDatabaseSchemaUpdates error: %s" % (err,)
+                )
 
     def _concatOperator(self, fields):
         """
@@ -564,7 +570,10 @@ class EntropySQLiteRepository(EntropySQLRepository):
             return lock
 
         already_acquired = lock.is_already_acquired()
-        lock.acquire_shared()
+        try:
+            lock.acquire_shared()
+        except OSError as err:
+            raise LockAcquireError(err)
 
         if not already_acquired:
             # in-RAM cached data may have become stale
@@ -582,7 +591,12 @@ class EntropySQLiteRepository(EntropySQLRepository):
             return lock
 
         already_acquired = lock.is_already_acquired()
-        acquired = lock.try_acquire_shared()
+
+        try:
+            acquired = lock.try_acquire_shared()
+        except OSError as err:
+            raise LockAcquireError(err)
+
         if acquired:
             if not already_acquired:
                 # in-RAM cached data may have become stale
@@ -601,7 +615,10 @@ class EntropySQLiteRepository(EntropySQLRepository):
             return lock
 
         already_acquired = lock.is_already_acquired()
-        lock.acquire_exclusive()
+        try:
+            lock.acquire_exclusive()
+        except OSError as err:
+            raise LockAcquireError(err)
 
         if not already_acquired:
             # in-RAM cached data may have become stale
@@ -618,7 +635,11 @@ class EntropySQLiteRepository(EntropySQLRepository):
             return lock
 
         already_acquired = lock.is_already_acquired()
-        acquired = lock.try_acquire_exclusive()
+        try:
+            acquired = lock.try_acquire_exclusive()
+        except OSError as err:
+            raise LockAcquireError(err)
+
         if acquired:
             if not already_acquired:
                 # in-RAM cached data may have become stale
