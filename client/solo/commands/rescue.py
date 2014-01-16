@@ -23,7 +23,7 @@ from entropy.db.exceptions import OperationalError, DatabaseError
 from entropy.client.interfaces.db import InstalledPackagesRepository
 
 from solo.commands.descriptor import SoloCommandDescriptor
-from solo.commands.command import SoloCommand
+from solo.commands.command import SoloCommand, sharedlock, exclusivelock
 
 import entropy.tools
 
@@ -251,20 +251,20 @@ Tools to rescue the running system.
             )
         return 0
 
-    def _check(self, entropy_client):
+    @sharedlock
+    def _check(self, entropy_client, inst_repo):
         """
         Solo Smart Check command.
         """
         return self._check_repository(
             entropy_client,
-            entropy_client.installed_repository())
+            inst_repo)
 
-    def _vacuum(self, entropy_client):
+    @sharedlock
+    def _vacuum(self, entropy_client, inst_repo):
         """
         Solo Smart Vacuum command.
         """
-        inst_repo = entropy_client.installed_repository()
-
         entropy_client.output(
             "%s..." % (
                 brown(_("Compacting the Installed Packages repository")),
@@ -297,13 +297,12 @@ Tools to rescue the running system.
             return True, None
         repo_dir = os.path.dirname(path)
 
-        # make sure to commit any transaction before backing-up
-        repo.commit()
         backed_up, msg = entropy_client.backup_repository(
             repo.repository_id(), repo_dir)
         return backed_up, msg
 
-    def _generate(self, entropy_client):
+    @exclusivelock
+    def _generate(self, entropy_client, inst_repo):
         """
         Solo Smart Generate command.
         """
@@ -346,7 +345,6 @@ Tools to rescue the running system.
         # clean caches
         spm = entropy_client.Spm()
         entropy_client.clear_cache()
-        inst_repo = entropy_client.installed_repository()
 
         # try to get a list of current package ids, if possible
         try:
@@ -394,6 +392,7 @@ Tools to rescue the running system.
             repo_path,
             header="  ")
 
+        inst_repo.commit()
         backed_up, msg = self._backup_repository(
             entropy_client, inst_repo, repo_path)
         if not backed_up:
@@ -435,15 +434,8 @@ Tools to rescue the running system.
         # open a repository at the old path, if repo_path is
         # not in place, Entropy will forward us to the in-RAM
         # database (for sqlite), which is not what we want.
-        gen_repo = entropy_client.open_generic_repository(
-            repo_path, dbname=InstalledPackagesRepository.NAME,
-            xcache=False, skip_checks=True)
-        gen_repo.initializeRepository()
-        gen_repo.commit()
-        gen_repo.close()
-
-        entropy_client.reopen_installed_repository()
-        inst_repo = entropy_client.installed_repository()
+        inst_repo.initializeRepository()
+        inst_repo.commit()
 
         entropy_client.output(
             purple(_("Repository initialized, generating metadata")),
@@ -524,7 +516,6 @@ Tools to rescue the running system.
                 revision = data['revision'])
             inst_repo.storeInstalledPackage(package_id,
                 etpConst['spmdbid'])
-            inst_repo.commit()
 
         try:
             os.remove(tmp_path)
@@ -536,13 +527,15 @@ Tools to rescue the running system.
             header=darkgreen(" @@ "), back=True
             )
         inst_repo.createAllIndexes()
+        inst_repo.commit()
         entropy_client.output(
             purple(_("Repository metadata generation complete")),
             header=darkgreen(" @@ ")
             )
         return 0
 
-    def _spmsync(self, entropy_client):
+    @exclusivelock
+    def _spmsync(self, entropy_client, inst_repo):
         """
         Solo Smart Spmsync command.
         """
@@ -585,7 +578,6 @@ Tools to rescue the running system.
         installed_spm_uids = set()
         to_be_added = set()
         to_be_removed = set()
-        inst_repo = entropy_client.installed_repository()
 
         # collect new packages
         for spm_package, spm_package_id in installed_packages:
@@ -799,7 +791,8 @@ Tools to rescue the running system.
 
         return 0
 
-    def _spmuids(self, entropy_client):
+    @exclusivelock
+    def _spmuids(self, entropy_client, inst_repo):
         """
         Solo Smart Spmuids command.
         """
@@ -809,7 +802,6 @@ Tools to rescue the running system.
             header=brown(" @@ "),
             back=True)
 
-        inst_repo = entropy_client.installed_repository()
         inst_repo.regenerateSpmUidMapping()
 
         entropy_client.output(
@@ -818,11 +810,11 @@ Tools to rescue the running system.
             header=brown(" @@ "))
         return 0
 
-    def _backup(self, entropy_client):
+    @sharedlock
+    def _backup(self, entropy_client, inst_repo):
         """
         Solo Smart Backup command.
         """
-        inst_repo = entropy_client.installed_repository()
         path = entropy_client.installed_repository_path()
         dir_path = os.path.dirname(path)
 
@@ -832,11 +824,11 @@ Tools to rescue the running system.
             return 0
         return 1
 
-    def _restore(self, entropy_client):
+    @exclusivelock
+    def _restore(self, entropy_client, inst_repo):
         """
         Solo Smart Restore command.
         """
-        inst_repo = entropy_client.installed_repository()
         path = entropy_client.installed_repository_path()
 
         repo_list = entropy_client.installed_repository_backups()

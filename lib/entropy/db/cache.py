@@ -13,6 +13,8 @@ import weakref
 
 from entropy.core import Singleton
 
+import entropy.tools
+
 
 class EntropyRepositoryCacher(Singleton):
     """
@@ -71,3 +73,24 @@ class EntropyRepositoryCacher(Singleton):
             self.__live_cache[key] = weakref.ref(value)
         else:
             self.__live_cache[key] = value
+
+
+class EntropyRepositoryCachePolicies(object):
+    """
+    Enum listing all the available in-RAM cache policies for EntropyRepository
+    object instances.
+    It is up to EntropyRepositoryBase subclasses to make use of these.
+    """
+
+    (
+        # No caching in RAM at all, slower in some cases, but
+        # still acceptably fast.
+        NONE,
+        # All the queries that make sense to cache are cached in RAM.
+        ALL,
+    ) = range(2)
+
+    if entropy.tools.total_memory() >= 4000:
+        DEFAULT_CACHE_POLICY = ALL
+    else:
+        DEFAULT_CACHE_POLICY = NONE

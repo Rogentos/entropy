@@ -1,3 +1,349 @@
+commit 0b881e238fbac3093e6d20e0e3eceda0d037682d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 09:10:34 2014 +0100
+
+    Release Entropy 265
+
+commit eb64e4156a24f018bd9004c68414c46f84c10163
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 09:09:19 2014 +0100
+
+    [Rigo] do not show app management buttons during upgrade
+
+commit 0b1b213730d4c04ca48f8265b2169c6a5df32b17
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 01:01:21 2014 +0100
+
+    [Rigo] translate IDLE DaemonAppAction as well
+
+commit 14cff214c6e0a2c4d4a6f49c838ab5c7dffdac29
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 01:00:18 2014 +0100
+
+    [Rigo] Always execute _entropy_bus() from the main thread, avoids deadlocks
+
+commit f9a80d7bd02d1e5a171b4ab74d17c16b04651411
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 00:58:45 2014 +0100
+
+    [Rigo] add IDLE to AppActions enum
+
+commit 7c8bfe830370211c40bdd6f14d29784be4d00907
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 00:14:09 2014 +0100
+
+    [Rigo] emit application-abort when busy() fails with BusyError
+
+commit 6b7e4f96c33b9ee1e5911a12f31395dc72e56041
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Tue Jan 14 00:13:41 2014 +0100
+
+    [Rigo] add UPGRADE to AppActions to match DaemonAppActions
+
+commit d856204a8d88a66b9afc1694cf964f986b9dee54
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 11 10:43:53 2014 +0100
+
+    [solo.commands.rescue] simplify "generate" code
+
+commit c22a8efc2cc097fa9b9efbea11c0287c762113f7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 11 09:57:38 2014 +0100
+
+    [solo.commands.rescue] handle the inst_repo lock when needed
+
+commit 86820a9abaa07e7e1805a8260c7c5316c532b18b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 11 09:44:04 2014 +0100
+
+    [solo.commands.hop] acquire the inst_repo exclusive lock before touching it
+
+commit e76775701edd86c1d3bbf97dd124ac2aa61769e2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 15:51:29 2014 +0100
+
+    [entropy.client.package] multifetch: define failed_downloads before use
+
+commit 64b0e8baa99235fb93135a12a3f8e7745ad70ee2
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 14:53:05 2014 +0100
+
+    [entropy.client] Client: rewrite lazy loading support, improve reliability
+
+commit 301aa281d5ddd89bf334ddf30f06b070eb7abc8a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 13:59:14 2014 +0100
+
+    [entropy.client] avoid races in Entropy Client @property methods
+
+commit 881f8831cff98174bf83d04e91cd5a2034e5cf80
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 13:55:31 2014 +0100
+
+    [entropy.client] set _real_enabled_repos atomically
+    
+    The race was triggered by the startup code path in Rigo.
+
+commit 8c4737ef7a745af554d61994b92fe8b5f2ae6445
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 13:32:36 2014 +0100
+
+    [entropy.core] SystemSettingsPlugin: make parse() return plugin metadata
+    
+    This is needed in order to avoid infinite recursion through
+    __maybe_lazy_load()
+
+commit 64fb91dcaec6ab3d3b4cd2b65f6497809f99f20c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 13:00:31 2014 +0100
+
+    [entropy.core] SystemSettings: enable lazy loading of external plugins as well
+
+commit ce070e541b13df58b7bf7fc483d14f99f38841eb
+Merge: 282fd0d a03296d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 02:57:17 2014 -0800
+
+    Merge pull request #7 from prescott66/patch-4
+    
+    Slovak translation update
+
+commit a03296d92d9990eae76afc6e436adf6d1a1645a6
+Author: Dušan <prescott66@gmail.com>
+Date:   Sun Jan 5 11:27:54 2014 +0100
+
+    Slovak translation update
+    
+    finally translated to 100%
+
+commit 282fd0d74c1f4450c40f9f3e26fb0d1d2ba6063e
+Merge: 1d965c7 1152e6e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Jan 5 02:18:13 2014 -0800
+
+    Merge pull request #6 from prescott66/patch-3
+    
+    Slovak translation update
+
+commit 1152e6e6f0c230c98c57ba483431e5b3020becaa
+Author: Dušan <prescott66@gmail.com>
+Date:   Sun Jan 5 10:11:47 2014 +0100
+
+    Slovak translation update
+
+commit 1d965c7185f88915baa8639e4a8d9da6da955e88
+Merge: 1f4ecf4 42f9df1
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 23:35:59 2014 -0800
+
+    Merge pull request #5 from prescott66/patch-2
+    
+    Slovak translation update
+
+commit 1f4ecf45b3adfdad45b75decd4ced9c7b0635894
+Merge: c946bac 95a37ca
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 23:35:46 2014 -0800
+
+    Merge pull request #4 from prescott66/patch-1
+    
+    Slovak translation update
+
+commit 42f9df141b1dde5c053110c1261ef66459f1ae02
+Author: Dušan <prescott66@gmail.com>
+Date:   Sat Jan 4 22:38:01 2014 +0100
+
+    Slovak translation update
+    
+    Fixed plurals and added new strings
+
+commit 95a37ca2a21c74a47f5adc61feabc9f82f14ef50
+Author: Dušan <prescott66@gmail.com>
+Date:   Sat Jan 4 22:27:40 2014 +0100
+
+    Slovak translation update
+    
+    Fixed strings with plurals
+
+commit c946bacd7d1cf5e72c191f647b72ede8d41e126b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 18:17:34 2014 +0100
+
+    [conf] update sabayon-limbo repository description
+
+commit 2e36e7c86c6e4bdacba1dc7ce1823f01f1568e9e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 11:16:46 2014 +0100
+
+    Tagging Entropy version 264
+
+commit 92a5f2fcc1e2ebf34add0a0bfe6fb15d1a29a824
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 11:16:46 2014 +0100
+
+    Release Entropy 264
+
+commit de156b083b612ca28336b87235466165f4b0b3ab
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 11:16:00 2014 +0100
+
+    [Rigo] change the EntropyRepository default cache policy to NONE
+    
+    This saves a huge quantity of RAM, as happened with RigoDaemon
+
+commit 3ebba8b14f2951610297b92b175005fe4dcefe5f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 11:15:27 2014 +0100
+
+    [entropy.db.sql] fix typo in SQL query, s/tag/versiontag/
+
+commit c48869bb31294c1b25ae61014a54f23b3b0e5b12
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 11:01:27 2014 +0100
+
+    [entropy.core] SystemSettings: drop mtime based in-RAM cache
+    
+    It does more harm than good and we have lazy loading now
+
+commit c98c39db062709af5b4815875e7b5512b39e2a72
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 10:31:09 2014 +0100
+
+    [entropy.core] SystemSettings: drop mtime based cache validation
+    
+    This is no longer necessary and error prone on filesystems with
+    coarse mtime granularity (like ext3). Individual methods are able
+    to validate their own caches.
+
+commit 5da276bfb6e08cda82f1145aa3daa61cd2a452ce
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Jan 4 10:10:49 2014 +0100
+
+    [entropy.core] SystemSettings: __remove_repo_cache() is no longer necessary
+
+commit d20ce3c2cc745e3066c493362b49bb71cdc440ba
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 21:04:06 2014 +0100
+
+    [client] update translations
+
+commit 3238689ad4e807b1edb11f84bc218a33bb4e49bc
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 21:03:41 2014 +0100
+
+    [client] update Slovak translation, thanks to Dušan Kazik
+
+commit 9af5689a130c32889306476318bc9836411743ff
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 20:57:10 2014 +0100
+
+    [entropy.core] SystemSettings: simplify __getitem__
+
+commit ab6d1f9fc4bc6e2e2b257226ddc5f79ae998834e
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 20:55:36 2014 +0100
+
+    [entropy.core] SystemSettings: lazy load item only if it hasn't been loaded yet
+
+commit 2053989b2728b97bf5bb8022c64f930b509ffbb5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 20:25:52 2014 +0100
+
+    [entropy.core] SystemSettings: add lazy loading of metadata
+
+commit 289add075b1a10a47202aa04f50f21418eeea511
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 20:24:27 2014 +0100
+
+    [Rigo] Update the Slovak translation, thanks to Dušan Kazik
+
+commit 86f31f29483816c365238138d4f74addb5816303
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 16:12:21 2014 +0100
+
+    Tagging Entropy version 263
+
+commit 7877126107ff05dc36c57bc05d7c7c66635a3524
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 16:12:21 2014 +0100
+
+    Release Entropy 263
+
+commit b0bd765b50573195e853c303746a1a54b9fbd885
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 16:10:33 2014 +0100
+
+    [entropy.db.sqlite] do not acquire the repo lock if it's not strictly needed
+    
+    Try to avoid to acquire the repository lock in exclusive mode if
+    it's not strictly needed. We were acquiring the lock in exclusive mode
+    even when there was nothing to update due to schema changes.
+
+commit d7d75b4ad9e8cd8a6167ac15346d9ccf8319762b
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 15:50:06 2014 +0100
+
+    Tagging Entropy version 262
+
+commit f1de6accefbf47d21e75217a0a2098aba09567d7
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 15:50:06 2014 +0100
+
+    Release Entropy 262
+
+commit 74f8bb63f5bc7db6e7112dd126326af6d930f6be
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 15:45:39 2014 +0100
+
+    [entropy.spm] PortagePlugin: update portage.doebuild() call, remove deprecated root argument
+
+commit c65d713c913a25d0917ef2905eb2d3875ecfa407
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 15:12:12 2014 +0100
+
+    [Rigo] fix NotificationBox message_type keyword argument
+
+commit d03466ea102285814e8e5f151e0f87e6b6b0c541
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 14:54:04 2014 +0100
+
+    [entropy.db.cache] disable in-RAM cache if total memory is less than 4G
+
+commit ee48b812ed56031ae70960132a2f0825d5081438
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 14:53:42 2014 +0100
+
+    [entropy.tools] add total_memory() function
+
+commit cbe42edee9c792dc4a5322db8bd4db86ac29eb80
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Jan 3 07:36:44 2014 +0100
+
+    [RigoDaemon] set the cache policy to EntropyRepositoryCachePolicies.NONE
+    
+    This greatly reduces the memory consumption of RigoDaemon
+
+commit 338b3f6cc59240431921188c2601429a02f718d0
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Jan 2 23:00:00 2014 +0100
+
+    [entropy.db] expose and use the currently set cache policy
+
+commit b6ed5f9948f77df8dc59b2a2421fdd6c5a6e6323
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Thu Jan 2 22:58:54 2014 +0100
+
+    [entropy.db.cache] introduce EntropyRepositoryCachePolicies
+    
+    It is now possible to define a policy for the in-RAM cache through
+    EntropyRepository constructor or EntropyRepositoryCachePolicies.
+
+commit ba70572e17b8ab64296854af0b56bb5da48d3faf
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Jan 1 11:03:52 2014 +0100
+
+    Tagging Entropy version 261
+
 commit 2d2241408667b34cea7d3a45fe49acb0dbfb1011
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Wed Jan 1 11:03:52 2014 +0100

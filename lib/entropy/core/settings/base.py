@@ -19,13 +19,15 @@
 """
 import codecs
 import errno
+import functools
 import hashlib
 import os
 import sys
 import threading
+import warnings
 
-from entropy.const import etpConst, etpSys, const_setup_perms, \
-    const_secure_config_file, const_set_nice_level, const_isunicode, \
+from entropy.const import etpConst, etpSys, \
+    const_secure_config_file, const_set_nice_level, \
     const_convert_to_unicode, const_convert_to_rawstring, \
     const_debug_write, const_is_python3, const_file_readable
 from entropy.core import Singleton, EntropyPluginStore, BaseConfigParser
@@ -452,15 +454,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
             """
             self.__cache = cache_obj
 
-    # If set to True, enable in-RAM cache usage if
-    # configuration files have the same mtime of
-    # the last time they were read, during the same
-    # process lifecycle. Any race condition between
-    # reading the mtime and actually reading the file
-    # content can be trascurable as long as the cache
-    # data is stored in ram and not on-disk.
-    DISK_DATA_CACHE = True
-
     def init_singleton(self):
 
         """
@@ -477,6 +470,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
         self.__lock = RLock()
         self.__cacher = EntropyCacher()
         self.__data = {}
+        self.__parsables = {}
         self.__is_destroyed = False
         self.__inside_with_stmt = 0
         self.__pkg_comment_tag = "##"
@@ -486,8 +480,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         self.__setting_files_pre_run = []
         self.__setting_files = {}
         self.__setting_dirs = {}
-        self.__mtime_files = {}
-        self.__mtime_cache = {}
         self.__persistent_settings = {
             'pkg_masking_reasons': etpConst['pkg_masking_reasons'].copy(),
             'pkg_masking_reference': etpConst['pkg_masking_reference'].copy(),
@@ -629,6 +621,22 @@ class SystemSettings(Singleton, EntropyPluginStore):
             SystemSettings.packages_config_directory(),
             etpConst['confsetsdirname'])
 
+    def __maybe_lazy_load(self, key):
+        """
+        Lazy load a dict item if it's in the parsable dict.
+        """
+        if key is None:
+            for item, func in self.__parsables.items():
+                const_debug_write(
+                    __name__, "%s was lazy loaded (slow path!!)" % (item,))
+                self.__data[item] = func()
+            return
+
+        if key in self.__parsables:
+            if key not in self.__data:
+                const_debug_write(__name__, "%s was lazy loaded" % (key,))
+                self.__data[key] = self.__parsables[key]()
+
     def __setup_const(self):
 
         """
@@ -642,9 +650,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         del self.__setting_files_pre_run[:]
         self.__setting_files.clear()
         self.__setting_dirs.clear()
-        self.__mtime_files.clear()
-        if not SystemSettings.DISK_DATA_CACHE:
-            self.__mtime_cache.clear()
 
         packages_dir = SystemSettings.packages_config_directory()
         self.__setting_files.update({
@@ -698,17 +703,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         self.__setting_files_pre_run.extend(['repositories'])
 
         dmp_dir = etpConst['dumpstoragedir']
-        self.__mtime_files.update({
-            'keywords_mtime': os.path.join(dmp_dir, "keywords.mtime"),
-            'unmask_mtime': os.path.join(dmp_dir, "unmask.mtime"),
-            'mask_mtime': os.path.join(dmp_dir, "mask.mtime"),
-            'license_mask_mtime': os.path.join(dmp_dir,
-                                               "license_mask.mtime"),
-            'license_accept_mtime': os.path.join(dmp_dir,
-                                                 "license_accept.mtime"),
-            'system_mask_mtime': os.path.join(dmp_dir,
-                                              "system_mask.mtime"),
-        })
 
         conf_d_descriptors = [
             ("mask_d", "package.mask.d",
@@ -795,13 +789,18 @@ class SystemSettings(Singleton, EntropyPluginStore):
         # plugins support
         local_plugins = self.get_plugins()
         for plugin_id in sorted(local_plugins):
-            local_plugins[plugin_id].parse(self)
+
+            self.__parsables[plugin_id] = functools.partial(
+                local_plugins[plugin_id].parse, self)
 
         # external plugins support
         external_plugins = self.__get_external_plugins()
         for external_plugin_id in sorted(external_plugins):
             external_plugin = external_plugins[external_plugin_id]()
-            external_plugin.parse(self)
+
+            self.__parsables[external_plugin_id] = functools.partial(
+                external_plugin.parse, self)
+
             self.__external_plugins[external_plugin_id] = external_plugin
 
         enforce_persistent()
@@ -823,114 +822,134 @@ class SystemSettings(Singleton, EntropyPluginStore):
             self.__persistent_settings[mykey] = myvalue
         self.__data[mykey] = myvalue
 
-    def __getitem__(self, mykey):
+    def __getitem__(self, key):
         """
         dict method. See Python dict API reference.
         """
         with self.__lock:
-            return self.__data[mykey]
+            self.__maybe_lazy_load(key)
+            return self.__data[key]
 
-    def __delitem__(self, mykey):
+    def __delitem__(self, key):
         """
         dict method. See Python dict API reference.
         """
         with self.__lock:
-            del self.__data[mykey]
+            try:
+                del self.__data[key]
+            except KeyError:
+                if key not in self.__parsables:
+                    raise
 
     def __iter__(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return iter(self.__data)
 
     def __contains__(self, item):
         """
         dict method. See Python dict API reference.
         """
-        return item in self.__data
+        return item in self.__data or item in self.__parsables
 
     def __hash__(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return hash(self.__data)
 
     def __len__(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return len(self.__data)
 
-    def get(self, *args, **kwargs):
+    def get(self, key, *args, **kwargs):
         """
         dict method. See Python dict API reference.
         """
-        return self.__data.get(*args, **kwargs)
+        self.__maybe_lazy_load(key)
+        return self.__data.get(key, *args, **kwargs)
 
     def copy(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.copy()
 
     def fromkeys(self, *args, **kwargs):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.fromkeys(*args, **kwargs)
 
     def items(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.items()
 
     def iteritems(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.iteritems()
 
     def iterkeys(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.iterkeys()
 
     def keys(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.keys()
 
-    def pop(self, *args, **kwargs):
+    def pop(self, key, *args, **kwargs):
         """
         dict method. See Python dict API reference.
         """
-        return self.__data.pop(*args, **kwargs)
+        self.__maybe_lazy_load(key)
+        return self.__data.pop(key, *args, **kwargs)
 
     def popitem(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.popitem()
 
-    def setdefault(self, *args, **kwargs):
+    def setdefault(self, key, *args, **kwargs):
         """
         dict method. See Python dict API reference.
         """
-        return self.__data.setdefault(*args, **kwargs)
+        self.__maybe_lazy_load(key)
+        return self.__data.setdefault(key, *args, **kwargs)
 
     def update(self, kwargs):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.update(kwargs)
 
     def values(self):
         """
         dict method. See Python dict API reference.
         """
+        self.__maybe_lazy_load(None)
         return self.__data.values()
 
     def clear(self):
@@ -942,6 +961,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
         """
         with self.__lock:
             self.__data.clear()
+            self.__parsables.clear()
             self.__setup_const()
             self.__scan()
 
@@ -1030,7 +1050,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
             if not hasattr(self, myattr):
                 continue
             func = getattr(self, myattr)
-            self.__data[item] = func()
+            self.__parsables[item] = func
 
         # parse main settings
         self.__setup_package_sets_vars()
@@ -1040,7 +1060,7 @@ class SystemSettings(Singleton, EntropyPluginStore):
             if not hasattr(self, myattr):
                 continue
             func = getattr(self, myattr)
-            self.__data[item] = func()
+            self.__parsables[item] = func
 
     def get_setting_files_data(self):
         """
@@ -1111,19 +1131,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @rtype: dict
         """
         keywords_conf = self.__setting_files['keywords']
-        root = etpConst['systemroot']
-        try:
-            mtime = os.path.getmtime(keywords_conf)
-        except (OSError, IOError):
-            mtime = 0.0
-
-        cache_key = (root, keywords_conf)
-        cache_obj = self.__mtime_cache.get(cache_key)
-        if cache_obj is not None:
-            if cache_obj['mtime'] == mtime:
-                return cache_obj['data']
-
-        cache_obj = {'mtime': mtime,}
 
         # merge universal keywords
         data = {
@@ -1132,8 +1139,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
                 'repositories': {},
         }
 
-        self.validate_entropy_cache(keywords_conf,
-            self.__mtime_files['keywords_mtime'])
         content = [x.split() for x in \
             self.__generic_parser(keywords_conf,
                 comment_tag = self.__pkg_comment_tag) \
@@ -1195,8 +1200,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         for keyword in data['universal']:
             etpConst['keywords'].add(keyword)
 
-        cache_obj['data'] = data
-        self.__mtime_cache[cache_key] = cache_obj
         return data
 
 
@@ -1210,9 +1213,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        self.validate_entropy_cache(
-            self.__setting_files['unmask'],
-            self.__mtime_files['unmask_mtime'])
         return self.__generic_parser(self.__setting_files['unmask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1226,9 +1226,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        self.validate_entropy_cache(
-            self.__setting_files['mask'],
-            self.__mtime_files['mask_mtime'])
         return self.__generic_parser(self.__setting_files['mask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1277,20 +1274,14 @@ class SystemSettings(Singleton, EntropyPluginStore):
         """
         Generic parser used by _*_d_parser() functions.
         """
-        conf_dir, setting_files, skipped_files, auto_upd = \
+        _conf_dir, setting_files, skipped_files, auto_upd = \
             self.__setting_dirs[setting_dirs_id]
-        dmp_dir = etpConst['dumpstoragedir']
-        dmp_mtime_dir_file = os.path.join(
-            dmp_dir, os.path.basename(conf_dir) + ".mtime")
-
-        self.validate_entropy_cache(conf_dir, dmp_mtime_dir_file)
 
         content = []
         files = setting_files
         if parse_skipped:
             files = skipped_files
-        for sett_file, mtime_sett_file in files:
-            self.validate_entropy_cache(sett_file, mtime_sett_file)
+        for sett_file, _mtime_sett_file in files:
             content += self.__generic_parser(sett_file,
                 comment_tag = self.__pkg_comment_tag)
 
@@ -1318,9 +1309,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        self.validate_entropy_cache(
-            self.__setting_files['system_mask'],
-            self.__mtime_files['system_mask_mtime'])
         return self.__generic_parser(self.__setting_files['system_mask'],
             comment_tag = self.__pkg_comment_tag)
 
@@ -1362,9 +1350,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        self.validate_entropy_cache(
-            self.__setting_files['license_mask'],
-            self.__mtime_files['license_mask_mtime'])
         return self.__generic_parser(self.__setting_files['license_mask'])
 
     def _license_accept_parser(self):
@@ -1376,9 +1361,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: parsed metadata
         @rtype: dict
         """
-        self.validate_entropy_cache(
-            self.__setting_files['license_accept'],
-            self.__mtime_files['license_accept_mtime'])
         return self.__generic_parser(self.__setting_files['license_accept'])
 
     def _extract_packages_from_set_file(self, filepath):
@@ -1489,19 +1471,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @rtype: string
         """
         hw_hash_file = self.__setting_files['hw_hash']
-        root = etpConst['systemroot']
-        try:
-            mtime = os.path.getmtime(hw_hash_file)
-        except (OSError, IOError):
-            mtime = 0.0
-
-        cache_key = (root, hw_hash_file)
-        cache_obj = self.__mtime_cache.get(cache_key)
-        if cache_obj is not None:
-            if cache_obj['mtime'] == mtime:
-                return cache_obj['data']
-
-        cache_obj = {'mtime': mtime,}
 
         enc = etpConst['conf_encoding']
         hash_data = None
@@ -1514,8 +1483,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
                 raise
 
         if hash_data is not None:
-            cache_obj['data'] = hash_data
-            self.__mtime_cache[cache_key] = cache_obj
             return hash_data
 
         hash_file_dir = os.path.dirname(hw_hash_file)
@@ -1533,16 +1500,12 @@ class SystemSettings(Singleton, EntropyPluginStore):
             pipe = None
 
             if sts is not None:
-                cache_obj['data'] = None
-                self.__mtime_cache[cache_key] = cache_obj
                 return None
 
             # expecting ascii cruft, don't worry about hash_data type
             with codecs.open(hw_hash_file, "w", encoding=enc) as hash_f:
                 hash_f.write(hash_data)
 
-            cache_obj['data'] = hash_data
-            self.__mtime_cache[cache_key] = cache_obj
             return hash_data
 
         finally:
@@ -1582,19 +1545,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @rtype: dict
         """
         etp_conf = self.__setting_files['system']
-        root = etpConst['systemroot']
-        try:
-            mtime = os.path.getmtime(etp_conf)
-        except (OSError, IOError):
-            mtime = 0.0
-
-        cache_key = (root, etp_conf)
-        cache_obj = self.__mtime_cache.get(cache_key)
-        if cache_obj is not None:
-            if cache_obj['mtime'] == mtime:
-                return cache_obj['data']
-
-        cache_obj = {'mtime': mtime,}
 
         data = {
             'proxy': etpConst['proxy'].copy(),
@@ -1604,8 +1554,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         }
 
         if const_file_readable(etp_conf):
-            cache_obj['data'] = data
-            self.__mtime_cache[cache_key] = cache_obj
             return data
 
         const_secure_config_file(etp_conf)
@@ -1691,8 +1639,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
                 continue
             func(value)
 
-        cache_obj['data'] = data
-        self.__mtime_cache[cache_key] = cache_obj
         return data
 
     def _analyze_client_repo_string(self, repostring, branch = None,
@@ -2237,20 +2183,6 @@ class SystemSettings(Singleton, EntropyPluginStore):
         @return: raw text extracted from file
         @rtype: list
         """
-        root = etpConst['systemroot']
-        try:
-            mtime = os.path.getmtime(filepath)
-        except (OSError, IOError):
-            mtime = 0.0
-
-        cache_key = (root, filepath)
-        cache_obj = self.__mtime_cache.get(cache_key)
-        if cache_obj is not None:
-            if cache_obj['mtime'] == mtime:
-                return SystemSettings.CachingList(cache_obj['data'])
-
-        cache_obj = {'mtime': mtime,}
-
         enc = etpConst['conf_encoding']
         lines = []
         try:
@@ -2269,137 +2201,11 @@ class SystemSettings(Singleton, EntropyPluginStore):
         except UnicodeDecodeError as err:
             const_debug_write(__name__, "UDE __generic_parser, %s: %s" % (
                     filepath, err,))
-        data = SystemSettings.CachingList(lines)
-        # do not cache CachingList, because it contains cache that
-        # shouldn't survive a clear()
-        cache_obj['data'] = lines
-        self.__mtime_cache[cache_key] = cache_obj
-        return data
 
-    def __remove_repo_cache(self, repoid = None):
+        return SystemSettings.CachingList(lines)
+
+    def validate_entropy_cache(self, *args, **kwargs):
         """
-        Internal method. Remove repository cache, because not valid anymore.
-
-        @keyword repoid: repository identifier or None
-        @type repoid: string or None
-        @return: None
-        @rtype: None
+        A call to this method is no longer necessary.
         """
-        if os.path.isdir(etpConst['dumpstoragedir']):
-            self.__cacher.discard()
-            if repoid:
-                return
-        else:
-            try:
-                os.makedirs(etpConst['dumpstoragedir'])
-            except IOError as e:
-                if e.errno == errno.EROFS:
-                    # readonly filesystem
-                    # placeholder for possible future activities
-                    pass
-                return
-            except OSError:
-                return
-
-    def __save_file_mtime(self, toread, tosaveinto):
-        """
-        Internal method. Save mtime of a file to another file.
-
-        @param toread: file path to read
-        @type toread: string
-        @param tosaveinto: path where to save retrieved mtime information
-        @type tosaveinto: string
-        @return: None
-        @rtype: None
-        """
-        try:
-            currmtime = os.path.getmtime(toread)
-        except (OSError, IOError):
-            currmtime = 0.0
-
-        if not os.path.isdir(etpConst['dumpstoragedir']):
-            try:
-                os.makedirs(etpConst['dumpstoragedir'], 0o775)
-                const_setup_perms(etpConst['dumpstoragedir'],
-                    etpConst['entropygid'])
-            except IOError as e:
-                if e.errno == errno.EROFS: # readonly filesystem
-                    # readonly filesystem
-                    # placeholder for possible future activities
-                    pass
-                return
-            except (OSError,) as e:
-                # unable to create the storage directory
-                # useless to continue
-                return
-
-        enc = etpConst['conf_encoding']
-        mtime_f = None
-        try:
-            try:
-                mtime_f = codecs.open(tosaveinto, "w", encoding=enc)
-            except IOError as e: # unable to write?
-                if e.errno == errno.EROFS: # readonly filesystem
-                    # readonly filesystem
-                    # placeholder for possible future activities
-                    pass
-                return
-
-            mtime_f.write(str(currmtime))
-            os.chmod(tosaveinto, 0o664)
-            if etpConst['entropygid'] is not None:
-                os.chown(tosaveinto, 0, etpConst['entropygid'])
-
-        finally:
-            if mtime_f is not None:
-                mtime_f.close()
-
-
-    def validate_entropy_cache(self, settingfile, mtimefile, repoid = None):
-        """
-        Internal method. Validates Entropy Cache based on a setting file
-        and its stored (cache bound) mtime.
-
-        @param settingfile: path of the setting file
-        @type settingfile: string
-        @param mtimefile: path where to save retrieved mtime information
-        @type mtimefile: string
-        @keyword repoid: repository identifier or None
-        @type repoid: string or None
-        @return: None
-        @rtype: None
-        """
-
-        def revalidate():
-            try:
-                self.__remove_repo_cache(repoid = repoid)
-                self.__save_file_mtime(settingfile, mtimefile)
-            except (OSError, IOError):
-                return
-
-        # handle on-disk cache validation
-        # in this case, repositories cache
-        # if file is changed, we must destroy cache
-        if not os.path.isfile(mtimefile):
-            # we can't know if it has been updated
-            # remove repositories caches
-            revalidate()
-            return
-
-        # check mtime
-        enc = etpConst['conf_encoding']
-        try:
-            with codecs.open(mtimefile, "r", encoding=enc) as mtime_f:
-                mtime = str(mtime_f.readline().strip())
-        except (OSError, IOError,):
-            mtime = "0.0"
-
-        try:
-            currmtime = str(os.path.getmtime(settingfile))
-        except (OSError, IOError,):
-            currmtime = "0.0"
-
-        if mtime != currmtime:
-            revalidate()
-            return False
-        return True
+        warnings.warn("A call to this method is no longer necessary")

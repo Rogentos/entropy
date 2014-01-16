@@ -181,7 +181,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
 
     def __init__(self, readOnly = False, dbFile = None, xcache = False,
                  name = None, indexing = True, skipChecks = False,
-                 temporary = False, direct = False):
+                 temporary = False, direct = False, cache_policy = None):
         """
         EntropySQLiteRepository constructor.
 
@@ -202,6 +202,8 @@ class EntropySQLiteRepository(EntropySQLRepository):
         @type temporary: bool
         @keyword direct: True, if direct mode should be always enabled
         @type direct: bool
+        @keyword cache_policy: set the cache policy that should be used
+        @type cache_policy: EntropyRepositoryCachePolicies attribute
         """
         self._rwsem_lock = threading.RLock()
         self._rwsem = None
@@ -210,7 +212,8 @@ class EntropySQLiteRepository(EntropySQLRepository):
 
         EntropySQLRepository.__init__(
             self, dbFile, readOnly, skipChecks, indexing,
-            xcache, temporary, name, direct=direct)
+            xcache, temporary, name, direct=direct,
+            cache_policy=cache_policy)
 
         if self._db is None:
             raise AttributeError("valid database path needed")
@@ -281,15 +284,9 @@ class EntropySQLiteRepository(EntropySQLRepository):
                 raise
 
         if update:
-            try:
-                with self.exclusive(), self._schema_update_lock:
-                    self._schema_update_run = True
-                    self._databaseSchemaUpdates()
-            except LockAcquireError as err:
-                const_debug_write(
-                    __name__,
-                    "_maybeDatabaseSchemaUpdates error: %s" % (err,)
-                )
+            with self._schema_update_lock:
+                self._schema_update_run = True
+                self._databaseSchemaUpdates()
 
     def _concatOperator(self, fields):
         """
@@ -1008,7 +1005,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).getVersioningData(
                 package_id)
 
@@ -1030,7 +1027,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).getStrictData(
                 package_id)
 
@@ -1065,7 +1062,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).getStrictScopeData(
                 package_id)
 
@@ -1166,7 +1163,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveDigest(
                 package_id)
 
@@ -1202,7 +1199,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must use the in-memory cache to do some memoization.
         We must handle _baseinfo_extrainfo_2010.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveKeySplit(
                 package_id)
 
@@ -1234,7 +1231,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must use the in-memory cache to do some memoization.
         We must handle _baseinfo_extrainfo_2010.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveKeySlot(
                 package_id)
 
@@ -1266,7 +1263,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         """
         Reimplemented from EntropyRepositoryBase.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository,
                          self).retrieveKeySlotAggregated(package_id)
 
@@ -1317,7 +1314,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveVersion(
                 package_id)
 
@@ -1339,7 +1336,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveRevision(
                 package_id)
 
@@ -1361,7 +1358,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveUseflags(
                 package_id)
 
@@ -1390,7 +1387,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropyRepositoryBase.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveDependencies(
                 package_id, extended = extended, deptype = deptype,
                 exclude_deptypes = exclude_deptypes,
@@ -1520,7 +1517,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveSlot(
                 package_id)
 
@@ -1542,7 +1539,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveTag(
                 package_id)
 
@@ -1566,7 +1563,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must handle _baseinfo_extrainfo_2010.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).retrieveCategory(
                 package_id)
 
@@ -1643,7 +1640,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must handle _baseinfo_extrainfo_2010.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).searchKeySlot(
                 key, slot)
 
@@ -1679,7 +1676,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must handle _baseinfo_extrainfo_2010.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).searchKeySlotTag(
                 key, slot, tag)
 
@@ -1776,7 +1773,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         We must handle _baseinfo_extrainfo_2010.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository, self).searchNameCategory(
                 name, category, just_id = just_id)
 
@@ -1889,15 +1886,36 @@ class EntropySQLiteRepository(EntropySQLRepository):
         """
         Do not forget to bump _SCHEMA_REVISION whenever you add more tables
         """
-        try:
-            current_schema_rev = int(self.getSetting("schema_revision"))
-        except (KeyError, ValueError):
-            current_schema_rev = -1
 
-        if current_schema_rev == EntropySQLiteRepository._SCHEMA_REVISION \
-                and not os.getenv("ETP_REPO_SCHEMA_UPDATE"):
+        def must_run():
+            try:
+                current_schema_rev = int(self.getSetting("schema_revision"))
+            except (KeyError, ValueError):
+                current_schema_rev = -1
+
+            if current_schema_rev == EntropySQLiteRepository._SCHEMA_REVISION \
+                    and not os.getenv("ETP_REPO_SCHEMA_UPDATE"):
+                return False
+            return True
+
+        if not must_run():
             return
 
+        try:
+            with self.exclusive():
+                if not must_run():
+                    return
+                self._databaseSchemaUpdatesUnlocked()
+        except LockAcquireError as err:
+            const_debug_write(
+                __name__,
+                "_maybeDatabaseSchemaUpdates error: %s" % (err,))
+
+    def _databaseSchemaUpdatesUnlocked(self):
+        """
+        Internal version of _databaseSchemaUpdates. This method assumes that
+        the Repository lock is acquired in exclusive mode.
+        """
         old_readonly = self._readonly
         self._readonly = False
 
@@ -2233,7 +2251,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepository.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository,
                          self).getInstalledPackageRepository(
                              package_id)
@@ -2256,7 +2274,7 @@ class EntropySQLiteRepository(EntropySQLRepository):
         Reimplemented from EntropySQLRepositoryBase.
         We must use the in-memory cache to do some memoization.
         """
-        if self.directed():
+        if self.directed() or self.cache_policy_none():
             return super(EntropySQLiteRepository,
                          self).getInstalledPackageSource(
                              package_id)
