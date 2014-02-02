@@ -14,6 +14,7 @@ import bz2
 import stat
 import fcntl
 import glob
+import hashlib
 import errno
 import sys
 import shutil
@@ -969,6 +970,65 @@ class RepositoryMixin:
         all_repositories = set(self._settings['repositories']['order'])
         unavailable = all_repositories - repositories
         return sorted(unavailable)
+
+    def filter_repositories(self, repository_ids):
+        """
+        Filter out package repositories from a given list.
+
+        @param repository_ids: an alternative list of enabled repository
+            identifiers
+        @type repository_ids: list
+        """
+        enabled_repos = [x for x in repository_ids if not \
+            x.endswith(etpConst['packagesext_webinstall'])]
+        enabled_repos = [x for x in enabled_repos if not \
+            x.endswith(etpConst['packagesext'])]
+        return enabled_repos
+
+    def repositories_checksum(self):
+        """
+        Return a SHA1 of the checksums and mtimes of all the repositories.
+
+        This method can be used for cache validation/lookup purposes.
+
+        @return: a SHA1 string of the checksum and mtimes of all the
+            available repositories, including package repositories,
+            excluding the installed packages repository
+        @rtype: string
+        """
+        repository_ids = self.repositories()
+        sha = hashlib.sha1()
+
+        sha.update(const_convert_to_rawstring(",".join(repository_ids)))
+        sha.update(const_convert_to_rawstring("-begin-"))
+
+        for repository_id in repository_ids:
+
+            mtime = None
+            checksum = None
+
+            try:
+                repo = self.open_repository(repository_id)
+            except RepositoryError:
+                repo = None
+
+            if repo is not None:
+                try:
+                    mtime = repo.mtime()
+                except (EntropyRepositoryError, OSError, IOError):
+                    pass
+
+                try:
+                    checksum = repo.checksum()
+                except EntropyRepositoryError:
+                    pass
+
+            cache_s = "{%s:{%r;%s}}" % (repository_id, mtime, checksum)
+            sha.update(const_convert_to_unicode(cache_s))
+
+        sha.update(const_convert_to_rawstring("-end-"))
+
+        return sha.hexdigest()
 
     def installed_repository(self):
         """
@@ -2013,7 +2073,8 @@ class MiscMixin:
                     valid_repos.append(inst_repo)
 
         elif not valid_repos:
-            valid_repos.extend(self._filter_available_repositories())
+            valid_repos.extend(
+                self.filter_repositories(self.repositories()))
 
         for repo in valid_repos:
             if const_isstring(repo):

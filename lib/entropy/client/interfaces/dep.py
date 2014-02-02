@@ -187,14 +187,13 @@ class CalculatorsMixin:
             sha = hashlib.sha1()
 
             cache_fmt = "a{%s}mr{%s}ms{%s}rh{%s}mf{%s}"
-            cache_fmt += "er{%s}ar{%s}m{%s}cm{%s}s{%s;%s;%s}"
+            cache_fmt += "ar{%s}m{%s}cm{%s}s{%s;%s;%s}"
             cache_s = cache_fmt % (
                 atom,
                 ";".join(match_repo),
                 match_slot,
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 mask_filter,
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
@@ -368,14 +367,13 @@ class CalculatorsMixin:
         if self.xcache and use_cache:
             sha = hashlib.sha1()
 
-            cache_s = "k{%s}re{%s}de{%s}rh{%s}m{%s}cm{%s}er{%s}ar{%s}" % (
+            cache_s = "k{%s}re{%s}de{%s}rh{%s}m{%s}cm{%s}ar{%s}" % (
                 keyword,
                 ";".join(repositories),
                 description,
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))
@@ -647,14 +645,13 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v6" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v7" % (
                 ";".join(sorted(dependencies)),
                 deep_deps,
                 inst_repo.checksum(),
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 relaxed_deps,
                 ignore_spm_downgrades,
@@ -1879,14 +1876,13 @@ class CalculatorsMixin:
         cache_key = None
 
         if self.xcache:
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|r6" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|r7" % (
                 match,
                 installed_package_id,
                 inst_repo.checksum(),
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
             )
             sha = hashlib.sha1()
@@ -2174,7 +2170,7 @@ class CalculatorsMixin:
                 only_deps,
                 recursive,
                 inst_repo.checksum(),
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(sorted(self._settings['repositories']['available'])),
@@ -2444,7 +2440,7 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "ma{%s}s{%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s}v4" % (
+            cache_s = "ma{%s}s{%s;%s;%s;%s;%s;%s;%s;%s;%s;%s}v5" % (
                 ";".join(["%s" % (x,) for x in sorted(matched_atoms)]),
                 deep,
                 recursive,
@@ -2452,10 +2448,9 @@ class CalculatorsMixin:
                 system_packages,
                 elf_needed_scanning,
                 inst_repo.checksum(),
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))
@@ -2876,9 +2871,16 @@ class CalculatorsMixin:
             [((package_id, repository_id), reason_id), ...]
         @rtype: list
         """
-        cache_key = "available/masked_%s_v2" % (
-            self._get_available_packages_hash(),
-        )
+        sha = hashlib.sha1()
+
+        cache_s = "{%s;%s}v2" % (
+            self.repositories_checksum(),
+            # needed when users do bogus things like editing config files
+            # manually (branch setting)
+            self._settings['repositories']['branch'])
+        sha.update(const_convert_to_rawstring(cache_s))
+
+        cache_key = "available/masked_%s" % (sha.hexdigest(),)
 
         if use_cache and self.xcache:
             cached = self._cacher.pop(cache_key)
@@ -2886,7 +2888,7 @@ class CalculatorsMixin:
                 return cached
 
         masked = []
-        for repository_id in self._filter_available_repositories():
+        for repository_id in self.filter_repositories(self.repositories()):
             repo = self.open_repository(repository_id)
             try:
                 # db may be corrupted, we cannot deal with it here
@@ -2926,15 +2928,24 @@ class CalculatorsMixin:
         @return: list of available package matches
         @rtype: list
         """
-        cache_key = "available_packages/%s" % (
-            self._get_available_packages_hash(),)
+        sha = hashlib.sha1()
+
+        cache_s = "{%s;%s}v2" % (
+            self.repositories_checksum(),
+            # needed when users do bogus things like editing config files
+            # manually (branch setting)
+            self._settings['repositories']['branch'])
+        sha.update(const_convert_to_rawstring(cache_s))
+
+        cache_key = "available/packages_%s" % (sha.hexdigest(),)
+
         if use_cache and self.xcache:
             cached = self._cacher.pop(cache_key)
             if cached is not None:
                 return cached
 
         available = []
-        for repository_id in self._filter_available_repositories():
+        for repository_id in self.filter_repositories(self.repositories()):
             repo = self.open_repository(repository_id)
             try:
                 # db may be corrupted, we cannot deal with it here
@@ -2977,17 +2988,16 @@ class CalculatorsMixin:
         if const_file_readable(in_branch_upgrade):
             return set(), []
 
-        enabled_repos = self._filter_available_repositories()
+        enabled_repos = self.filter_repositories(self.repositories())
         repo_order = [x for x in self._settings['repositories']['order'] if
             x in enabled_repos]
 
         inst_repo = self.installed_repository()
 
-        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|v4" % (
-            self._repositories_hash(),
+        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|v5" % (
             enabled_repos,
             inst_repo.checksum(),
-            self._all_repositories_hash(),
+            self.repositories_checksum(),
             self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
             ";".join(sorted(self._settings['repositories']['available'])),
@@ -3011,7 +3021,7 @@ class CalculatorsMixin:
 
         # do not match package repositories, never consider them in updates!
         # that would be a nonsense, since package repos are temporary.
-        enabled_repos = self._filter_available_repositories()
+        enabled_repos = self.filter_repositories(self.repositories())
         match_repos = tuple([x for x in \
             self._settings['repositories']['order'] if x in enabled_repos])
 
@@ -3123,16 +3133,15 @@ class CalculatorsMixin:
 
         inst_repo = self.installed_repository()
         ignore_spm_downgrades = misc_settings['ignore_spm_downgrades']
-        enabled_repos = self._filter_available_repositories()
+        enabled_repos = self.filter_repositories(self.repositories())
         repo_order = [x for x in self._settings['repositories']['order'] if
                       x in enabled_repos]
 
-        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v6" % (
-            self._repositories_hash(),
+        cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v7" % (
             empty,
             enabled_repos,
             inst_repo.checksum(),
-            self._all_repositories_hash(),
+            self.repositories_checksum(),
             self._settings.packages_configuration_hash(),
             self._settings_client_plugin.packages_configuration_hash(),
             ";".join(sorted(self._settings['repositories']['available'])),
@@ -3154,7 +3163,7 @@ class CalculatorsMixin:
 
         # do not match package repositories, never consider them in updates!
         # that would be a nonsense, since package repos are temporary.
-        enabled_repos = self._filter_available_repositories()
+        enabled_repos = self.filter_repositories(self.repositories())
         match_repos = tuple([x for x in \
             self._settings['repositories']['order'] if x in enabled_repos])
 
@@ -3536,14 +3545,13 @@ class CalculatorsMixin:
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "{%s;%s;%s;%s;%s;%s;%s;%s}v4" % (
+            cache_s = "{%s;%s;%s;%s;%s;%s;%s}v5" % (
                 atom,
                 deep,
                 inst_repo.checksum(),
-                self._all_repositories_hash(),
+                self.repositories_checksum(),
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
-                ";".join(self._enabled_repos),
                 ";".join(sorted(self._settings['repositories']['available'])),
                 )
             sha.update(const_convert_to_rawstring(cache_s))

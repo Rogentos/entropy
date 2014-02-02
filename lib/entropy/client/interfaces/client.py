@@ -10,6 +10,7 @@
 
 """
 import os
+import shutil
 import threading
 
 from entropy.core import Singleton
@@ -17,7 +18,6 @@ from entropy.locks import EntropyResourcesLock
 from entropy.fetchers import UrlFetcher, MultipleUrlFetcher
 from entropy.output import TextInterface, bold, red, darkred, blue
 from entropy.client.interfaces.loaders import LoadersMixin
-from entropy.client.interfaces.cache import CacheMixin
 from entropy.client.interfaces.db import InstalledPackagesRepository
 from entropy.client.interfaces.dep import CalculatorsMixin
 from entropy.client.interfaces.methods import RepositoryMixin, MiscMixin, \
@@ -26,7 +26,7 @@ from entropy.client.interfaces.noticeboard import NoticeBoardMixin
 from entropy.client.interfaces.settings import ClientSystemSettingsPlugin
 from entropy.client.misc import sharedinstlock
 from entropy.const import etpConst, const_debug_write, \
-    const_convert_to_unicode
+    const_convert_to_unicode, const_setup_perms
 from entropy.core.settings.base import SystemSettings
 from entropy.misc import LogFile
 from entropy.cache import EntropyCacher
@@ -37,7 +37,7 @@ import entropy.dep
 import entropy.tools
 
 
-class Client(Singleton, TextInterface, LoadersMixin, CacheMixin,
+class Client(Singleton, TextInterface, LoadersMixin,
              CalculatorsMixin, RepositoryMixin, MiscMixin,
              MatchMixin, NoticeBoardMixin):
 
@@ -396,3 +396,34 @@ class Client(Singleton, TextInterface, LoadersMixin, CacheMixin,
 
     def is_destroyed(self):
         return self.__instance_destroyed
+
+    def clear_cache(self):
+        """
+        Clear all the Entropy default cache directory. This function is
+        fault tolerant and will never return any exception.
+        """
+        with self._cacher:
+            # no data is written while holding self._cacher by the balls
+            # drop all the buffers then remove on-disk data
+            self._cacher.discard()
+            # clear repositories live cache
+            inst_repo = self.installed_repository()
+            if inst_repo is not None:
+                inst_repo.clearCache()
+            with self._repodb_cache_mutex:
+                for repo in self._repodb_cache.values():
+                    repo.clearCache()
+
+            cache_dir = self._cacher.current_directory()
+            try:
+                shutil.rmtree(cache_dir, True)
+            except (shutil.Error, IOError, OSError):
+                return
+            try:
+                os.makedirs(cache_dir, 0o775)
+            except (IOError, OSError):
+                return
+            try:
+                const_setup_perms(cache_dir, etpConst['entropygid'])
+            except (IOError, OSError):
+                return
