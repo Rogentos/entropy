@@ -1,3 +1,129 @@
+commit 200d0ce137638cc4751ec0c63cbe07448f7de669
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Mar 5 12:44:44 2014 +0100
+
+    Release Entropy 274
+
+commit 704b9a161a9893e463df490d2428cfa329e23f79
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Mar 5 12:43:16 2014 +0100
+
+    [entropy.server.interfaces.mirrors] fix _calculate_remote_package_files wrt separate package dirs
+
+commit 285b5558af59fd4fe63ac5bb2f428b66f163b6a3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Mar 5 11:20:50 2014 +0100
+
+    [entropy.server.interfaces.mirrors] speed up _calculate_local_{upload,package}_files
+
+commit 880aba81cbc59bfd65eddf6e055c499b6b96f7d5
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Mar 5 11:15:10 2014 +0100
+
+    [entropy.server.interfaces.mirrors] simplify local packages calculation methods
+
+commit 7bc1306d285a64ce3dddae9e802b643639fe43e3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Mar 2 12:13:14 2014 +0100
+
+    [Rigo] require Gtk+ 3.10 and solve all deprecation warnings related to Gtk*Box
+
+commit 11d166dfad96250917e5e783968853351c07ab17
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Feb 26 16:02:42 2014 +0100
+
+    Tagging Entropy version 273
+
+commit 846e9b16d85488536e453151339e0ee5b935567d
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Feb 26 16:02:41 2014 +0100
+
+    Release Entropy 273
+
+commit 9c505b4f58293dc5d84c58e20ba9309c65f6a7c3
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Wed Feb 26 16:02:13 2014 +0100
+
+    [entropy.server] correctly generate extra_download URLs
+
+commit 55d7dc68ef245a685d5e8611c3c679248c7f511c
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Feb 21 11:08:44 2014 +0100
+
+    Tagging Entropy version 272
+
+commit 2e82d22768398496a2cf320071a0ceade94ba56a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Feb 21 11:08:44 2014 +0100
+
+    Release Entropy 272
+
+commit 7456df4e9aff9b85f4ec66c1e17dbd7c76272b4f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Feb 21 11:07:56 2014 +0100
+
+    Tagging Entropy version 271
+
+commit 82f2d2e1dee1499f8f0740fe942d902730f66cbb
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Feb 21 11:07:56 2014 +0100
+
+    Release Entropy 271
+
+commit fc2488e5f7ac1c3176edae80729e76a17eafc2a4
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Mon Feb 17 21:03:29 2014 +0100
+
+    [matter] merge_list could be None, make sure it never is
+
+commit 855afdff1d13af186d37f47ed22389fbf6d9480f
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Feb 16 13:20:50 2014 +0100
+
+    [entropy.client.package] Do not alter repository package file directory permissions
+    
+    It was observed that the new locking mechanism introduced a problem
+    with the management of repository package files (.tbz2 files passed
+    to "equo install", for instance). Try to avoid that by symlinking
+    the package file to a safe location and using this one as pkgpath.
+    
+    This fixes bug 4604.
+
+commit 4c8d1801eaeb994c169e878b78a18a272517886a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sun Feb 16 13:18:15 2014 +0100
+
+    [entropy.tools] dump_entropy_metadata: follow symlinks when determining file size
+    
+    The package file passed as input might be pointing to a symlink.
+    If we use lstat().st_size we will get the symlink file size back
+    rather than the source file size, which is of course unwanted.
+    
+    This is part of the fixes for bug 4604.
+
+commit 1f6bd34749db3388a6530713b72223d19072ca10
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Feb 15 19:10:16 2014 +0100
+
+    [entropy] prefix package download URLs with the category directory
+    
+    This makes possible to avoid directory hot spots on repository mirrors.
+    This commit requires some mileage and real-world testing, but it
+    seems to be running good on a relatively small repository.
+    No backward compatibility issues have been reported.
+
+commit e45b5dc73eeb17cc41af3701bfacb1c4e6f0048a
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Sat Feb 15 15:52:43 2014 +0100
+
+    [todo] update TODO
+
+commit 1345074a61bad2e31485c3529c03e07693b4d610
+Author: Fabio Erculiani <lxnay@sabayon.org>
+Date:   Fri Feb 14 16:28:37 2014 +0100
+
+    Tagging Entropy version 270
+
 commit 9724a166892d00f1605e5ea6d8ac59bd36cba01e
 Author: Fabio Erculiani <lxnay@sabayon.org>
 Date:   Fri Feb 14 16:28:36 2014 +0100

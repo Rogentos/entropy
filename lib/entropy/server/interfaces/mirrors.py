@@ -17,6 +17,10 @@ import threading
 import multiprocessing
 import socket
 import codecs
+try:
+    from Queue import Queue
+except ImportError:
+    from queue import Queue
 
 from entropy.exceptions import EntropyPackageException
 from entropy.output import red, darkgreen, bold, brown, blue, darkred, \
@@ -882,41 +886,32 @@ class Server(object):
 
     def _calculate_local_upload_files(self, repository_id):
 
-        upload_files = 0
-        upload_packages = set()
         upload_dir = self._entropy._get_local_upload_directory(repository_id)
 
         # check if it exists
         if not os.path.isdir(upload_dir):
-            return upload_files, upload_packages
+            return set()
 
         branch = self._settings['repositories']['branch']
-        upload_pkgs = self._entropy._get_basedir_pkg_listing(upload_dir,
-            etpConst['packagesext'], branch = branch)
+        upload_packages = self._entropy._get_basedir_pkg_listing(
+            upload_dir, etpConst['packagesext'], branch = branch)
 
-        pkg_ext = etpConst['packagesext']
-        for package in upload_pkgs:
-            if package.endswith(pkg_ext):
-                upload_packages.add(package)
-                upload_files += 1
-
-        return upload_files, upload_packages
+        return set(upload_packages)
 
     def _calculate_local_package_files(self, repository_id, weak_files = False):
-        local_files = 0
-        local_packages = set()
+
         base_dir = self._entropy._get_local_repository_base_directory(
             repository_id)
 
         # check if it exists
         if not os.path.isdir(base_dir):
-            return local_files, local_packages
+            return set()
 
         branch = self._settings['repositories']['branch']
         pkg_ext = etpConst['packagesext']
 
-        pkg_files = set(self._entropy._get_basedir_pkg_listing(base_dir,
-            pkg_ext, branch = branch))
+        pkg_files = set(self._entropy._get_basedir_pkg_listing(
+                base_dir, pkg_ext, branch = branch))
 
         weak_ext = etpConst['packagesweakfileext']
         weak_ext_len = len(weak_ext)
@@ -935,12 +930,7 @@ class Server(object):
                         branch = branch))
                 )
 
-        for package in pkg_files:
-            if package.endswith(pkg_ext):
-                local_packages.add(package)
-                local_files += 1
-
-        return local_files, local_packages
+        return pkg_files
 
     def _show_local_sync_stats(self, upload_files, local_files):
         self._entropy.output(
@@ -1108,11 +1098,33 @@ class Server(object):
 
     def _calculate_remote_package_files(self, repository_id, uri, txc_handler):
 
-        remote_files = 0
         remote_packages_data = {}
         remote_packages = []
         branch = self._settings['repositories']['branch']
+        fifo_q = Queue()
 
+        def get_content(lookup_dir):
+            only_dir = self._entropy.complete_remote_package_relative_path(
+                "", repository_id)
+            db_url_dir = lookup_dir[len(only_dir):]
+
+            # create path to lock file if it doesn't exist
+            if not txc_handler.is_dir(lookup_dir):
+                txc_handler.makedirs(lookup_dir)
+
+            info = txc_handler.list_content_metadata(lookup_dir)
+
+            dirs = []
+            for path, size, user, group, perms in info:
+
+                if perms.startswith("d"):
+                    fifo_q.put(os.path.join(lookup_dir, path))
+                else:
+                    rel_path = os.path.join(db_url_dir, path)
+                    remote_packages.append(rel_path)
+                    remote_packages_data[rel_path] = int(size)
+
+        # initialize the queue
         pkgs_dir_types = self._entropy._get_pkg_dir_names()
         for pkg_dir_type in pkgs_dir_types:
 
@@ -1120,36 +1132,23 @@ class Server(object):
                 pkg_dir_type, repository_id)
             remote_dir = os.path.join(remote_dir, etpConst['currentarch'],
                 branch)
-            only_dir = self._entropy.complete_remote_package_relative_path("",
-                repository_id)
-            db_url_dir = remote_dir[len(only_dir):]
 
-            # create path to lock file if it doesn't exist
-            if not txc_handler.is_dir(remote_dir):
-                txc_handler.makedirs(remote_dir)
+            fifo_q.put(remote_dir)
 
-            remote_packages_info = txc_handler.list_content_metadata(remote_dir)
-            remote_packages += [os.path.join(db_url_dir, x[0]) for x \
-                in remote_packages_info]
+        while not fifo_q.empty():
+            get_content(fifo_q.get())
 
-            for pkg in remote_packages:
-                if pkg.endswith(etpConst['packagesext']):
-                    remote_files += 1
-
-            my_remote_pkg_data = dict((os.path.join(db_url_dir, x[0]),
-                int(x[1])) for x in remote_packages_info)
-            remote_packages_data.update(my_remote_pkg_data)
-
-        return remote_files, remote_packages, remote_packages_data
+        return remote_packages, remote_packages_data
 
     def _calculate_packages_to_sync(self, repository_id, uri):
 
         crippled_uri = EntropyTransceiver.get_uri_name(uri)
-        upload_files, upload_packages = self._calculate_local_upload_files(
+        upload_packages = self._calculate_local_upload_files(
             repository_id)
-        local_files, local_packages = self._calculate_local_package_files(
+        local_packages = self._calculate_local_package_files(
             repository_id, weak_files = True)
-        self._show_local_sync_stats(upload_files, local_files)
+        self._show_local_sync_stats(
+            len(upload_packages), len(local_packages))
 
         self._entropy.output(
             "%s: %s" % (blue(_("Remote statistics for")), red(crippled_uri),),
@@ -1160,14 +1159,14 @@ class Server(object):
 
         txc = self._entropy.Transceiver(uri)
         with txc as handler:
-            remote_files, remote_packages, remote_packages_data = \
-                self._calculate_remote_package_files(repository_id, uri,
-                    handler)
+            (remote_packages,
+             remote_packages_data) = self._calculate_remote_package_files(
+                repository_id, uri, handler)
 
         self._entropy.output(
             "%s:  %s %s" % (
                 blue(_("remote packages")),
-                bold(str(remote_files)),
+                bold("%d" % (len(remote_packages),)),
                 red(_("files stored")),
             ),
             importance = 0,
