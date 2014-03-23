@@ -33,7 +33,8 @@ from entropy.const import etpConst, etpSys, const_debug_write, const_mkdtemp, \
     const_is_python3, const_file_readable
 from entropy.output import blue, darkgreen, red, darkred, bold, purple, brown, \
     teal
-from entropy.exceptions import PermissionDenied, SystemDatabaseError
+from entropy.exceptions import PermissionDenied, SystemDatabaseError, \
+    FileNotFound
 from entropy.i18n import _
 from entropy.core import EntropyPluginStore
 from entropy.core.settings.base import SystemSettings
@@ -387,6 +388,13 @@ class QAInterface(TextInterface, EntropyPluginStore):
         """
         repos = sorted(entropy_client.repositories())
 
+        # populate the system packages cache
+        system_packages = set()
+        for s_repo_id in repos:
+            s_repo = entropy_client.open_repository(s_repo_id)
+            for s_package_id in s_repo.listAllSystemPackageIds():
+                system_packages.add((s_package_id, s_repo_id))
+
         def _warn_soname(soname, elfclass):
             # try to resolve soname
             for needed_repo in repos:
@@ -411,7 +419,42 @@ class QAInterface(TextInterface, EntropyPluginStore):
                     header = brown("     # ")
                 )
 
+        def _filter_missing_sonames(missing):
+            """
+            Determine whether the missing sonames bound to individual
+            executables are valid. Check if soname points to a system pkg
+            and filter it out in case.
+            """
+            filtered_missing_sonames = {}
+            for executable, sonames in missing.items():
+                elfclass = entropy.tools.read_elf_class(executable)
+
+                for soname in sonames:
+
+                    system_pkgs = set()
+                    for needed_repo in repos:
+                        needed_dbconn = entropy_client.open_repository(
+                            needed_repo)
+
+                        pkg_ids = needed_dbconn.resolveNeeded(
+                            soname, elfclass = elfclass)
+
+                        system_pkg = all(
+                            [self._is_system_package(
+                                    entropy_client, x, needed_dbconn,
+                                    system_packages) for x in pkg_ids])
+                        system_pkgs.add(system_pkg)
+
+                    if not all(system_pkgs):
+                        filtered_sonames = filtered_missing_sonames.setdefault(
+                            executable, set())
+                        filtered_sonames.add(soname)
+
+            return filtered_missing_sonames
+
+
         broken_matches = set()
+
         for count, (package_id, repo_id) in enumerate(package_matches, 1):
             dbconn = entropy_client.open_repository(repo_id)
             atom = dbconn.retrieveAtom(package_id)
@@ -420,6 +463,10 @@ class QAInterface(TextInterface, EntropyPluginStore):
             # ldd check, but just warn)
             missing_sonames = self._get_unresolved_sonames(entropy_client,
                 (package_id, repo_id))
+
+            if missing_sonames:
+                missing_sonames = _filter_missing_sonames(missing_sonames)
+
             if missing_sonames:
                 broken_matches.add((package_id, repo_id))
 
@@ -928,8 +975,12 @@ class QAInterface(TextInterface, EntropyPluginStore):
             broken_sym_found = set()
             if broken_symbols and not mylibs:
 
-                read_broken_syms = entropy.tools.read_elf_broken_symbols(
+                try:
+                    read_broken_syms = entropy.tools.read_elf_broken_symbols(
                         real_exec_path)
+                except FileNotFound:
+                    read_broken_syms = set()
+
                 my_broken_syms = set()
                 for read_broken_sym in read_broken_syms:
                     for reg_sym in broken_syms_list_regexp:
@@ -1252,6 +1303,44 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
         return results
 
+    def _is_system_package(self, entropy_client, package_id, entropy_repository,
+                           system_packages):
+        """
+        Return whether a package is a system package.
+
+        @param entropy_client: Entropy Client instance
+        @type entropy_client: entropy.client.interfaces.client.Client base
+            class object
+        @param package_id: the package identifier
+        @type package_id: int
+        @param entropy_repository: the Entropy repository where the package
+            is located
+        @type entropy_repository: entropy.db.EntropyRepository object
+        @param system_packages: a list (set) of system packages
+            (package matches)
+        @type system_packages: set
+        @return: True, if package is a system package
+        @rtype: bool
+        """
+        if (package_id, entropy_repository.name) in system_packages:
+            return True
+
+        reverse_deps = entropy_repository.retrieveReverseDependencies(
+            package_id, key_slot = True)
+        # with virtual packages, it can happen that system packages
+        # are not directly marked as such. so, check direct inverse deps
+        # and see if we find one
+        for rev_pkg_key, rev_pkg_slot in reverse_deps:
+            rev_pkg_id, rev_repo_id = entropy_client.atom_match(rev_pkg_key,
+                match_slot = rev_pkg_slot)
+            if rev_pkg_id == -1:
+                # can't find
+                continue
+            if (rev_pkg_id, rev_repo_id) in system_packages:
+                return True
+
+        return False
+
     def _get_missing_libraries(self, entropy_client, package_match):
         """
         Service method able to determine whether dependencies are missing
@@ -1269,26 +1358,6 @@ class QAInterface(TextInterface, EntropyPluginStore):
             set([list of missing dependencies])
         @rtype: tuple
         """
-
-        def is_system_pkg(pkg_id, repo, system_packages):
-            if (pkg_id, repo.name) in system_packages:
-                return True
-
-            reverse_deps = repo.retrieveReverseDependencies(pkg_id,
-                key_slot = True)
-            # with virtual packages, it can happen that system packages
-            # are not directly marked as such. so, check direct inverse deps
-            # and see if we find one
-            for rev_pkg_key, rev_pkg_slot in reverse_deps:
-                rev_pkg_id, rev_repo_id = entropy_client.atom_match(rev_pkg_key,
-                    match_slot = rev_pkg_slot)
-                if rev_pkg_id == -1:
-                    # can't find
-                    continue
-                if (rev_pkg_id, rev_repo_id) in system_packages:
-                    return True
-
-            return False
 
         def populate_caches(pkg_id, repo, provided_libs, scope_cache):
             """
@@ -1369,7 +1438,8 @@ class QAInterface(TextInterface, EntropyPluginStore):
                 key, slot = pkg_dbconn.retrieveKeySlot(pkg_id)
                 if (key, slot) in scope_cache:
                     continue
-                system_pkg = is_system_pkg(pkg_id, pkg_dbconn, system_packages)
+                system_pkg = self._is_system_package(
+                    entropy_client, pkg_id, pkg_dbconn, system_packages)
                 if system_pkg:
                     # ignore system package missing dep if this is a
                     # system package, it means that further missing
