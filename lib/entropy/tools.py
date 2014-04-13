@@ -2735,15 +2735,28 @@ def read_elf_real_dynamic_libraries(elf_file):
     elf_file = os.path.realpath(elf_file)
 
     proc = None
-    out = None
+    output = None
     args = ("/usr/bin/lddtree", "-l", elf_file)
 
     try:
         proc = subprocess.Popen(args, stdout = subprocess.PIPE)
+
+        output = const_convert_to_unicode("")
+
+        while True:
+
+            out = proc.stdout.read()
+            if not out:
+                break
+
+            if const_is_python3():
+                out = const_convert_to_unicode(out)
+            output += out
+
         exit_st = proc.wait()
         if exit_st != 0:
-            raise FileNotFound("lddtree returned error")
-        out = proc.stdout.read()
+            raise FileNotFound("lddtree returned error %d on %s" % (
+                exit_st, elf_file))
 
     except (OSError, IOError) as err:
         if err.errno != errno.ENOENT:
@@ -2755,10 +2768,8 @@ def read_elf_real_dynamic_libraries(elf_file):
             proc.stdout.close()
 
     outcome = set()
-    if out is not None:
-        if const_is_python3():
-            out = const_convert_to_unicode(out)
-        for line in out.split("\n"):
+    if output is not None:
+        for line in output.split("\n"):
             if line == elf_file:
                 continue
             if line:
@@ -2777,26 +2788,31 @@ def read_elf_broken_symbols(elf_file):
     """
     proc = None
     args = ("/usr/bin/ldd", "-r", elf_file)
-    out = None
+    output = None
+    stdout = None
 
     try:
+        stdout = open(os.devnull, "wb")
+
         proc = subprocess.Popen(
-            args, stdout = subprocess.PIPE,
+            args, stdout = stdout,
             stderr = subprocess.PIPE)
+
+        output = const_convert_to_unicode("")
+
+        while True:
+
+            err = proc.stderr.read()
+            if not err:
+                break
+
+            if const_is_python3():
+                err = const_convert_to_unicode(err)
+            output += err
+
         exit_st = proc.wait()
         if exit_st != 0:
             raise FileNotFound("ldd error")
-
-        out = const_convert_to_unicode("")
-        while True:
-            # make sure that stdout is flushed and won't block
-            proc.stdout.read()
-            tout = proc.stderr.read()
-            if const_is_python3():
-                tout = const_convert_to_unicode(tout)
-            out += tout
-            if not tout:
-                break
 
     except (OSError, IOError) as err:
         if err.errno != errno.ENOENT:
@@ -2806,11 +2822,12 @@ def read_elf_broken_symbols(elf_file):
     finally:
         if proc is not None:
             proc.stderr.close()
-            proc.stdout.close()
+        if stdout is not None:
+            stdout.close()
 
     outcome = set()
-    if out is not None:
-        for line in out.split("\n"):
+    if output is not None:
+        for line in output.split("\n"):
             if line.startswith("undefined symbol: "):
                 symbol = line.split("\t")[0].split()[-1]
                 outcome.add(symbol)

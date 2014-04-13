@@ -27,32 +27,6 @@ class EitMv(EitCp):
     NAME = "mv"
     ALIASES = []
 
-    def _get_parser(self):
-        """ Overridden from EitMv """
-        descriptor = EitCommandDescriptor.obtain_descriptor(
-            EitMv.NAME)
-        parser = argparse.ArgumentParser(
-            description=descriptor.get_description(),
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-            prog="%s %s" % (sys.argv[0], EitMv.NAME))
-
-        parser.add_argument("source", metavar="<source>",
-                            help=_("source repository"))
-        parser.add_argument("dest", metavar="<dest>",
-                            help=_("destination repository"))
-        parser.add_argument("--conservative", action="store_true",
-                            help=_("do not execute implicit package name "
-                                   "and slot updates"),
-                            default=self._conservative)
-        parser.add_argument("--deps", action="store_true",
-                            default=False,
-                            help=_("include dependencies"))
-        parser.add_argument("packages", nargs='*', metavar="<package>",
-                           help=_("package names (all if none)"),
-                            default=None)
-
-        return parser
-
     INTRODUCTION = """\
 Move packages from source repository to destination repository.
 The operation is transactional, first package is copied to destination,
@@ -77,6 +51,7 @@ then is removed from source.
         self._source = nsargs.source
         self._dest = nsargs.dest
         self._deps = nsargs.deps
+        self._ask = not nsargs.quick
         self._packages += nsargs.packages
         self._copy = False
         self._entropy_class()._inhibit_treeupdates = nsargs.conservative
