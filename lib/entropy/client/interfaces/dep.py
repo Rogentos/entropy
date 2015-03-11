@@ -1075,7 +1075,8 @@ class CalculatorsMixin:
 
     def __generate_dependency_tree_inst_hooks(self, installed_match,
                                               pkg_match, build_deps,
-                                              elements_cache):
+                                              elements_cache,
+                                              ldpaths):
 
         if const_debug_enabled():
             inst_atom = self.installed_repository().retrieveAtom(
@@ -1096,7 +1097,7 @@ class CalculatorsMixin:
                 broken_children_matches,))
 
         after_pkgs, before_pkgs = self._lookup_library_breakages(
-            pkg_match, installed_match[0])
+            pkg_match, installed_match[0], ldpaths)
         if const_debug_enabled():
             const_debug_write(__name__,
                 "__generate_dependency_tree_inst_hooks "
@@ -1378,7 +1379,7 @@ class CalculatorsMixin:
         empty_deps = False, relaxed_deps = False, build_deps = False,
         only_deps = False, deep_deps = False, unsatisfied_deps_cache = None,
         elements_cache = None, post_deps_cache = None, recursive = True,
-        selected_matches = None, selected_matches_cache = None):
+        selected_matches = None, selected_matches_cache = None, ldpaths = None):
 
         pkg_id, pkg_repo = matched_atom
         if (pkg_id == -1) or (pkg_repo == 1):
@@ -1395,6 +1396,10 @@ class CalculatorsMixin:
 
         if selected_matches is None:
             selected_matches = set()
+
+        if ldpaths is None:
+            ldpaths = frozenset()
+
         deps_not_found = set()
         conflicts = set()
         first_element = True
@@ -1456,7 +1461,7 @@ class CalculatorsMixin:
                 children_matches, after_pkgs, before_pkgs, inverse_deps = \
                     self.__generate_dependency_tree_inst_hooks(
                         (cm_package_id, cm_result), pkg_match,
-                        build_deps, elements_cache)
+                        build_deps, elements_cache, ldpaths)
                 # this is fine this way, these are strong inverse deps
                 # and their order is already written in stone
                 for inv_match in inverse_deps:
@@ -1809,41 +1814,46 @@ class CalculatorsMixin:
         as package dependency but not on the current system state.
         """
         package_id, repository_id = package_match
+        inst_repo = self.installed_repository()
         repo = self.open_repository(repository_id)
 
-        repo_needed = repo.retrieveNeeded(package_id,
-            extended = True, formatted = True)
-        installed_needed = self.installed_repository().retrieveNeeded(
-            installed_package_id, extended = True, formatted = True)
+        # Ignore user library path and user library soname, not relevant.
+        repo_needed = {
+            (soname, elf, rpath) for _usr_path, _usr_soname, soname, elf, rpath
+            in repo.retrieveNeededLibraries(package_id)}
+        installed_needed = {
+            (soname, elf, rpath) for _usr_path, _usr_soname, soname, elf, rpath
+            in inst_repo.retrieveNeededLibraries(installed_package_id)}
 
         # intersect the two dicts and find the libraries that
         # have not changed. We assume that a pkg cannot link
         # the same SONAME with two different elf classes.
-        # but that is what retrieveNeeded() assumes as well
-        common_libs = set(repo_needed) & set(installed_needed)
-        # assume that we can in-place change these two dicts
-        for common_lib in common_libs:
-            repo_needed.pop(common_lib, None)
-            installed_needed.pop(common_lib, None)
+        # but that is what retrieveNeededLibraries() assumes as well
+        common_libs = repo_needed & installed_needed
+        for lib_data in common_libs:
+            repo_needed.discard(lib_data)
+            installed_needed.discard(lib_data)
 
-        soname = const_convert_to_unicode(".so")
-        repo_split = dict(
-            (x, x.split(soname)[0]) for x in repo_needed)
-        installed_split = dict(
-            (x, x.split(soname)[0]) for x in installed_needed)
+        soname_ext = const_convert_to_unicode(".so")
+        # x[0] is soname.
+        repo_split = {x: tuple(x[0].split(soname_ext)) for x in repo_needed}
+        installed_split = {
+            x: tuple(x[0].split(soname_ext)) for x in installed_needed}
 
         inst_lib_dumps = set() # was installed_side
         repo_lib_dumps = set() # was repo_side
         # ^^ library dumps using repository NEEDED metadata
 
-        for lib, lib_name in installed_split.items():
+        for lib_data, lib_name in installed_split.items():
+            lib, elfclass, rpath = lib_data
             if lib_name in repo_split.values():
                 # (library name, elf class)
-                inst_lib_dumps.add((lib, installed_needed[lib]))
+                inst_lib_dumps.add((lib, elfclass, rpath))
 
-        for lib, lib_name in repo_split.items():
+        for lib_data, lib_name in repo_split.items():
+            lib, elfclass, rpath = lib_data
             if lib_name in installed_split.values():
-                repo_lib_dumps.add((lib, repo_needed[lib]))
+                repo_lib_dumps.add((lib, elfclass, rpath))
 
         # now consider the case in where we have new libraries
         # that are not in the installed libraries set.
@@ -1853,21 +1863,17 @@ class CalculatorsMixin:
             # Reverse repo_split in order to generate a mapping
             # between a library name and its set of full libraries
             reversed_repo_split = {}
-            for lib, lib_name in repo_split.items():
+            for lib_data, lib_name in repo_split.items():
+                lib, elfclass, rpath = lib_data
                 obj = reversed_repo_split.setdefault(lib_name, set())
-                obj.add(lib)
+                obj.add((lib, elfclass, rpath))
 
-            new_repo_lib_dumps = set()
             for lib_name in new_libraries:
-                libs = reversed_repo_split[lib_name]
-                for lib in libs:
-                    elf_class = repo_needed[lib]
-                    new_repo_lib_dumps.add((lib, elf_class))
-            repo_lib_dumps |= new_repo_lib_dumps
+                repo_lib_dumps |= reversed_repo_split[lib_name]
 
         return inst_lib_dumps, repo_lib_dumps
 
-    def _lookup_library_breakages(self, match, installed_package_id):
+    def _lookup_library_breakages(self, match, installed_package_id, ldpaths):
         """
         Lookup packages that need to be bumped because "match" is being
         installed and "installed_package_id" removed.
@@ -1879,7 +1885,7 @@ class CalculatorsMixin:
         cache_key = None
 
         if self.xcache:
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|r7" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|r8" % (
                 match,
                 installed_package_id,
                 inst_repo.checksum(),
@@ -1887,6 +1893,7 @@ class CalculatorsMixin:
                 self._settings.packages_configuration_hash(),
                 self._settings_client_plugin.packages_configuration_hash(),
                 ";".join(sorted(self._settings['repositories']['available'])),
+                ";".join(sorted(ldpaths)),
             )
             sha = hashlib.sha1()
             sha.update(const_convert_to_rawstring(cache_s))
@@ -1901,7 +1908,7 @@ class CalculatorsMixin:
             match, installed_package_id)
 
         matches = self._lookup_library_breakages_available(
-            match, repo_side)
+            match, repo_side, ldpaths)
         installed_matches = self._lookup_library_breakages_installed(
             installed_package_id, client_side)
 
@@ -1916,7 +1923,8 @@ class CalculatorsMixin:
         return installed_matches, matches
 
     def _lookup_library_breakages_available(self, package_match,
-                                            bumped_needed_libs):
+                                            bumped_needed_libs,
+                                            ldpaths):
         """
         Generate a list of package matches that should be bumped
         if the given libraries were installed.
@@ -1966,19 +1974,23 @@ class CalculatorsMixin:
 
         found_matches = set()
         keyslot = repo.retrieveKeySlotAggregated(package_id)
-        for needed, elfclass in bumped_needed_libs:
+        for needed, elfclass, rpath in bumped_needed_libs:
 
-            solved_neededs = []
+            package_ldpaths = ldpaths | set(entropy.tools.parse_rpath(rpath))
+
             found = False
             for s_repo_id in self._settings['repositories']['order']:
 
                 s_repo = self.open_repository(s_repo_id)
                 solved_needed = s_repo.resolveNeeded(
-                    needed, elfclass = elfclass)
-                if solved_needed:
-                    solved_neededs.append((s_repo_id, solved_needed))
+                    needed, elfclass = elfclass, extended = True)
 
-                for repo_pkg_id in solved_needed:
+                # Filter out resolved needed that are not in package LDPATH.
+                solved_needed = filter(
+                    lambda x: os.path.dirname(x[1]) in package_ldpaths,
+                    solved_needed)
+
+                for repo_pkg_id, path in solved_needed:
                     repo_pkg_match = (repo_pkg_id, s_repo_id)
 
                     if package_match == repo_pkg_match:
@@ -2048,17 +2060,16 @@ class CalculatorsMixin:
         # all the packages in bumped_needed_libs should be
         # pulled in and updated
         installed_package_ids = set()
-        for needed, elfclass in bumped_needed_libs:
-            installed_package_ids |= inst_repo.searchNeeded(
+        for needed, elfclass, rpath in bumped_needed_libs:
+            found_neededs = inst_repo.searchNeeded(
                 needed, elfclass = elfclass)
+            installed_package_ids |= found_neededs
         # drop myself
         installed_package_ids.discard(installed_package_id)
 
-        inst_keyslots = {}
-        for inst_package_id in installed_package_ids:
-            keyslot = inst_repo.retrieveKeySlotAggregated(inst_package_id)
-            if keyslot is not None:
-                inst_keyslots[keyslot] = inst_package_id
+        inst_keyslots = {inst_repo.retrieveKeySlotAggregated(x): x
+                         for x in installed_package_ids}
+        inst_keyslots.pop(None, None)
 
         # these can be pulled in after
         installed_matches = set()
@@ -2158,13 +2169,14 @@ class CalculatorsMixin:
         deep_deps = False, relaxed_deps = False, build_deps = False,
         only_deps = False, quiet = False, recursive = True):
 
+        ldpaths = frozenset(entropy.tools.collect_linker_paths())
         inst_repo = self.installed_repository()
         cache_key = None
 
         if self.xcache:
             sha = hashlib.sha1()
 
-            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v7" % (
+            cache_s = "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|v8" % (
                 ";".join(["%s" % (x,) for x in sorted(package_matches)]),
                 empty_deps,
                 deep_deps,
@@ -2179,7 +2191,8 @@ class CalculatorsMixin:
                 ";".join(sorted(self._settings['repositories']['available'])),
                 # needed when users do bogus things like editing config files
                 # manually (branch setting)
-                self._settings['repositories']['branch'])
+                self._settings['repositories']['branch'],
+                ";".join(sorted(ldpaths)))
 
             sha.update(const_convert_to_rawstring(cache_s))
             cache_key = "deptree/dep_tree_%s" % (sha.hexdigest(),)
@@ -2250,7 +2263,8 @@ class CalculatorsMixin:
                     post_deps_cache = post_deps_cache,
                     recursive = recursive,
                     selected_matches = selected_matches_set,
-                    selected_matches_cache = selected_matches_cache
+                    selected_matches_cache = selected_matches_cache,
+                    ldpaths = ldpaths
                 )
             except DependenciesNotFound as err:
                 deps_not_found |= err.value

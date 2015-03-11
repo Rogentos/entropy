@@ -6624,7 +6624,7 @@ class Server(Client):
             pkg_md5, pkg_slot, pkg_etpapi, \
             pkg_date, pkg_size, pkg_rev = repo_db.getBaseData(package_id)
             pkg_deps = repo_db.retrieveDependenciesList(package_id)
-            pkg_needed = repo_db.retrieveNeeded(package_id, extended = True)
+            pkg_needed = repo_db.retrieveNeededLibraries(package_id)
             pkg_provided_libs = repo_db.retrieveProvidedLibraries(package_id)
             pkg_keywords = repo_db.retrieveKeywords(package_id)
 
@@ -6664,8 +6664,9 @@ class Server(Client):
             env['PKG_SIZE'] = str(pkg_size)
             env['PKG_REVISION'] = str(pkg_rev)
             env['PKG_DEPS'] = str("\n".join(pkg_deps))
-            env['PKG_NEEDED_LIBS'] = str("\n".join(["%s|%s" % (x, y) \
-                    for x, y in pkg_needed]))
+            env['PKG_NEEDED_LIBS'] = str("\n".join(
+                    ["%s|%s|%s|%s|%s" % (a, b, x, y, c) for a, b, x, y, c in
+                     pkg_needed]))
             env['PKG_PROVIDED_LIBS'] = str("\n".join(
                 ["%s|%s|%s" % (x, y, z) for x, y, z in \
                     pkg_provided_libs]))
@@ -7441,10 +7442,16 @@ class Server(Client):
 
         # pkg_meta['conflicts'] is a frozenset
         conflicts = set(pkg_meta['conflicts'])
+        remove_conflicts = set()
+
         new_dependencies = []
         remove_dependencies = set()
 
-        for dep_string, dep_value in pkg_meta['pkg_dependencies']:
+        pkg_deps = [(dep_str, dep_val, False) for dep_str, dep_val
+                    in pkg_meta['pkg_dependencies']]
+        pkg_deps += [(confl, None, True) for confl in pkg_meta['conflicts']]
+
+        for dep_string, dep_value, is_conflict in pkg_deps:
 
             dep_string_matched = False
             matched_pattern = False
@@ -7479,7 +7486,12 @@ class Server(Client):
                     if number_of_subs_made:
                         dep_string_matched = True
                         if new_dep_string and (new_dep_string != "-"):
-                            new_dependencies.append((new_dep_string, dep_value))
+
+                            if is_conflict:
+                                conflicts.add(new_dep_string)
+                            else:
+                                new_dependencies.append((new_dep_string, dep_value))
+
                             self.output(
                                 "%s: %s => %s" % (
                                     teal(_("replaced")),
@@ -7514,7 +7526,11 @@ class Server(Client):
                         )
 
             if dep_string_matched:
-                remove_dependencies.add(dep_string)
+                if is_conflict:
+                    remove_conflicts.add(dep_string)
+                else:
+                    remove_dependencies.add(dep_string)
+
             elif (not dep_string_matched) and matched_pattern:
                 self.output(
                     "%s: %s :: %s" % (
@@ -7527,6 +7543,7 @@ class Server(Client):
                     header = darkred("   !x!x!x! ")
                 )
 
+        # Update dependencies
         pkg_dependencies = []
         for dep_string, dep_value in pkg_meta['pkg_dependencies']:
             if dep_string in remove_dependencies:
@@ -7535,6 +7552,9 @@ class Server(Client):
 
         pkg_dependencies.extend(new_dependencies)
         pkg_meta['pkg_dependencies'] = tuple(pkg_dependencies)
+
+        # Update conflicts
+        conflicts -= remove_conflicts
 
         # save conflicts metadata back in place
         pkg_meta['conflicts'] = frozenset(conflicts)

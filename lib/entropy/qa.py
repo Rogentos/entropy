@@ -30,7 +30,7 @@ from entropy.output import TextInterface
 from entropy.misc import Lifo
 from entropy.const import etpConst, etpSys, const_debug_write, const_mkdtemp, \
     const_mkstemp, const_debug_write, const_convert_to_rawstring, \
-    const_is_python3, const_file_readable
+    const_is_python3
 from entropy.output import blue, darkgreen, red, darkred, bold, purple, brown, \
     teal
 from entropy.exceptions import PermissionDenied, SystemDatabaseError, \
@@ -369,139 +369,10 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
         return missing_map
 
-    def warn_missing_dependencies(self, entropy_client, package_matches):
-        """
-        Scan given package matches looking for missing dependencies.
-        This method scans the live filesystem looking for library matches,
-        so the returned information might be incorrect (packages using
-        runtime LD_LIBRARY_PATH and other dlopen() magic might be reported
-        as false positives).
-
-        @param entropy_client: Entropy Client instance
-        @type entropy_client: entropy.client.interfaces.client.Client based
-            instance object
-        @param package_matches: list of entropy package matches tuples
-            (package id, repo id)
-        @type package_matches: list
-        @return: list (set) of broken package matches
-        @rtype: set
-        """
-        repos = sorted(entropy_client.repositories())
-
-        # populate the system packages cache
-        system_packages = set()
-        for s_repo_id in repos:
-            s_repo = entropy_client.open_repository(s_repo_id)
-            for s_package_id in s_repo.listAllSystemPackageIds():
-                system_packages.add((s_package_id, s_repo_id))
-
-        def _warn_soname(soname, elfclass):
-            # try to resolve soname
-            for needed_repo in repos:
-                needed_dbconn = entropy_client.open_repository(needed_repo)
-                pkg_ids = needed_dbconn.resolveNeeded(soname,
-                    elfclass = elfclass)
-                if pkg_ids:
-                    pkg_atoms = sorted((
-                        needed_dbconn.retrieveKeySlotAggregated(x) for x in \
-                            pkg_ids))
-                    pkg_atoms_string = ', '.join(pkg_atoms)
-                else:
-                    pkg_atoms_string = _("no packages")
-                self.output(
-                    "[%s:%s] %s" % (
-                        brown(needed_repo),
-                        teal(soname),
-                        purple(pkg_atoms_string),
-                    ),
-                    importance = 0,
-                    level = "info",
-                    header = brown("     # ")
-                )
-
-        def _filter_missing_sonames(missing):
-            """
-            Determine whether the missing sonames bound to individual
-            executables are valid. Check if soname points to a system pkg
-            and filter it out in case.
-            """
-            filtered_missing_sonames = {}
-            for executable, sonames in missing.items():
-                elfclass = entropy.tools.read_elf_class(executable)
-
-                for soname in sonames:
-
-                    system_pkgs = set()
-                    for needed_repo in repos:
-                        needed_dbconn = entropy_client.open_repository(
-                            needed_repo)
-
-                        pkg_ids = needed_dbconn.resolveNeeded(
-                            soname, elfclass = elfclass)
-
-                        system_pkg = all(
-                            [self._is_system_package(
-                                    entropy_client, x, needed_dbconn,
-                                    system_packages) for x in pkg_ids])
-                        system_pkgs.add(system_pkg)
-
-                    if not all(system_pkgs):
-                        filtered_sonames = filtered_missing_sonames.setdefault(
-                            executable, set())
-                        filtered_sonames.add(soname)
-
-            return filtered_missing_sonames
-
-
-        broken_matches = set()
-
-        for count, (package_id, repo_id) in enumerate(package_matches, 1):
-            dbconn = entropy_client.open_repository(repo_id)
-            atom = dbconn.retrieveAtom(package_id)
-
-            # check for untracked missing sonames (using less reliable
-            # ldd check, but just warn)
-            missing_sonames = self._get_unresolved_sonames(entropy_client,
-                (package_id, repo_id))
-
-            if missing_sonames:
-                missing_sonames = _filter_missing_sonames(missing_sonames)
-
-            if missing_sonames:
-                broken_matches.add((package_id, repo_id))
-
-                self.output(
-                    "[%s] %s: %s %s:" % (
-                        darkgreen(repo_id),
-                        blue("package"),
-                        darkgreen(atom),
-                        blue(_("is potentially missing these dependencies")),
-                    ),
-                    importance = 1,
-                    level = "info",
-                    header = red(" @@ "),
-                    count = (count, len(package_matches),)
-                )
-            for executable, sonames in missing_sonames.items():
-                elfclass = entropy.tools.read_elf_class(executable)
-                self.output(
-                    "%s (elf class: %s):" % (
-                        brown(executable),
-                        teal(str(elfclass)),
-                    ),
-                    importance = 0,
-                    level = "info",
-                    header = purple("   ## ")
-                )
-                for soname in sonames:
-                    _warn_soname(soname, elfclass)
-
-        return broken_matches
-
     def test_missing_runtime_libraries(self, entropy_client, package_matches,
         base_repository_id = None, excluded_libraries = None, silent = False):
         """
-        Use collected packages ELF metadata (retrieveNeeded(),
+        Use collected packages ELF metadata (retrieveNeededLibraries(),
         resolveNeeded()) to look for potentially missing
         shared libraries. This is very handy in case of library breakages
         across multiple server-side repositories.
@@ -540,67 +411,10 @@ class QAInterface(TextInterface, EntropyPluginStore):
         else:
             excluded_libraries = set(excluded_libraries)
 
+        ldpaths = set(entropy.tools.collect_linker_paths())  # expensive-ish
+
         # update content taken from brokenlinksmask.conf
         excluded_libraries.update(self._settings['broken_links_mask'])
-
-        def _resolve_needed_content_fallback(repo, pkg_id, library):
-            # at this point, perhaps the library is self contained in the
-            # package itself, and in non-standard path. so, let's see if
-            # it's in the content metadata before giving up.
-            # Since this is expensive, try to first match it in
-            # pre-hashed metadata (via resolveNeeded())
-            content_iter = repo.retrieveContentIter(pkg_id)
-
-            # NOTE: we assume that ELF class is the same as the one
-            # requested, because we're not allowed to poll the
-            # live system. perhaps in future we could collect
-            # more metadata.
-            for path, ftype in content_iter:
-                if ftype == "dir":
-                    continue
-                b_path = os.path.basename(path)
-                if library == b_path:
-                    return True
-            return False
-
-        def _resolve_needed(repo, pkg_id, library, elfclass, multi_repo):
-
-            resolved_needed = repo.resolveNeeded(library,
-                elfclass = elfclass)
-            if resolved_needed:
-                return True
-
-            if not resolved_needed and not multi_repo:
-                # sorry, can't find it, this is the base repo already
-                return _resolve_needed_content_fallback(repo, pkg_id, library)
-
-            for repo_id in entropy_client.repositories():
-                if repo_id == repo.repository_id():
-                    # already searched here
-                    continue
-                other_repo = entropy_client.open_repository(repo_id)
-                resolved_needed = other_repo.resolveNeeded(library,
-                    elfclass = elfclass)
-                if resolved_needed:
-                    # found !
-                    return True
-
-            return _resolve_needed_content_fallback(repo, pkg_id, library)
-
-        def _look_for_available_soname(current_repo_id, library, elfclass):
-            where = frozenset()
-            for repo_id in entropy_client.repositories():
-                if repo_id == current_repo_id:
-                    # already searched here
-                    continue
-                other_repo = entropy_client.open_repository(repo_id)
-                resolved_needed = other_repo.resolveNeeded(library,
-                    elfclass = elfclass, extended = True)
-                if not resolved_needed:
-                    continue
-                where = [(x, repo_id, y) for x, y in resolved_needed]
-                break
-            return where
 
         count = 0
         maxcount = len(package_matches)
@@ -629,14 +443,26 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
             is_base_repo = repository_id == base_repository_id
 
-            # list of (needed, elfclass)
-            needed = repo.retrieveNeeded(package_id, extended = True)
-            for library, elfclass in needed:
+            needed = repo.retrieveNeededLibraries(package_id)
+            for _usr_path, _usr_soname, library, elfclass, rpath in needed:
                 if library in excluded_libraries:
                     continue
-                resolved = _resolve_needed(repo, package_id, library, elfclass,
-                    not is_base_repo)
-                if not resolved:
+
+                resolved = self._resolve_library(
+                    entropy_client, library, elfclass, rpath, ldpaths,
+                    entropy_client.repositories())
+
+                warn_problem = not resolved
+                # If we are testing against a package in the base repo
+                # and the only results we got are from packages in
+                # other repos, this is a problem.
+                if resolved and is_base_repo:
+                    base_repo_resolved = [(p_id, r, p) for p_id, r, p
+                                          in resolved if r == repository_id]
+                    if not base_repo_resolved:
+                        warn_problem = True
+
+                if warn_problem:
                     missing_sonames.add((library, elfclass))
 
                     if not silent:
@@ -652,10 +478,9 @@ class QAInterface(TextInterface, EntropyPluginStore):
                             level = "warning",
                             header = " ",
                         )
+
                     # perhaps the lib is in some other repo?
-                    resolved_needed = _look_for_available_soname(
-                        repository_id, library, elfclass)
-                    for pkg_id, repo_id, path in resolved_needed:
+                    for pkg_id, repo_id, path in resolved:
                         atom = entropy_client.open_repository(
                             repo_id).retrieveAtom(pkg_id)
                         if not silent:
@@ -669,7 +494,7 @@ class QAInterface(TextInterface, EntropyPluginStore):
                                 level = "warning",
                                 header = darkred("   "),
                             )
-                    if not resolved_needed and not silent:
+                    if not resolved and not silent:
                         self.output(
                             "%s: %s" % (
                                 brown(_("provided by")),
@@ -801,21 +626,18 @@ class QAInterface(TextInterface, EntropyPluginStore):
             else:
                 broken_libs_mask_regexp.append(reg_lib)
 
-        ldpaths = entropy.tools.collect_linker_paths()
-        ldpaths += [x for x in entropy.tools.collect_paths() if \
-            x not in ldpaths]
+        ldpaths = set(entropy.tools.collect_linker_paths())
+        ldpaths.update(entropy.tools.collect_paths())
 
         # some crappy packages put shit here too
-        ldpaths += [x for x in self._settings['extra_ldpaths'] if \
-            x not in ldpaths]
+        ldpaths.update(self._settings['extra_ldpaths'])
 
         # remove duplicated dirs (due to symlinks) to speed up scanning
         for real_dir in list(reverse_symlink_map.keys()):
             syms = reverse_symlink_map[real_dir]
             for sym in syms:
                 if sym in ldpaths:
-                    while (real_dir in ldpaths):
-                        ldpaths.remove(real_dir)
+                    ldpaths.discard(real_dir)
                     if not silent:
                         self.output(
                             "%s: %s, %s: %s" % (
@@ -1275,8 +1097,8 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
         return unresolved_sonames
 
-    def _resolve_library(self, entropy_client, library_name, elfclass,
-                         repositories):
+    def _resolve_library(self, entropy_client, library_name,
+                         elfclass, rpath, linker_paths, repositories):
         """
         Resolve a library name (SONAME) in the given repositories.
 
@@ -1287,6 +1109,11 @@ class QAInterface(TextInterface, EntropyPluginStore):
         @type library_name: string
         @param elfclass: ELF class of the library to resolve
         @type elfclass: int
+        @param rpath: the RPATH metadata for the library
+        @type rpath: string
+        @param linker_paths: list (set) of paths the linker is currently
+            configured to use
+        @type linker_paths: set
         @param repositories: list of repository identifiers
         @type repositories: list
         @return: a list of resolved libraries, each item of the
@@ -1294,6 +1121,8 @@ class QAInterface(TextInterface, EntropyPluginStore):
         @rtype: list
         """
         results = []
+
+        local_ldpaths = linker_paths | set(entropy.tools.parse_rpath(rpath))
 
         for repository_id in repositories:
             repo = entropy_client.open_repository(repository_id)
@@ -1303,7 +1132,8 @@ class QAInterface(TextInterface, EntropyPluginStore):
                 continue
 
             for pkg_id, path in data_solved:
-                results.append((pkg_id, repository_id, path))
+                if os.path.dirname(path) in local_ldpaths:
+                    results.append((pkg_id, repository_id, path))
 
         return results
 
@@ -1384,7 +1214,7 @@ class QAInterface(TextInterface, EntropyPluginStore):
 
         rdepends = {}
         rdepends_plain = set()
-        neededs = dbconn.retrieveNeeded(package_id, extended = True)
+        neededs = dbconn.retrieveNeededLibraries(package_id)
         if not neededs:
             return rdepends, rdepends_plain
 
@@ -1414,18 +1244,22 @@ class QAInterface(TextInterface, EntropyPluginStore):
             for s_package_id in s_repo.listAllSystemPackageIds():
                 system_packages.add((s_package_id, s_repo_id))
 
-        for needed, elfclass in neededs:
+        ldpaths = set(entropy.tools.collect_linker_paths())  # expensive-ish
+
+        for _usr_path, _usr_soname, soname, elfclass, rpath in neededs:
             data_solved = self._resolve_library(
-                entropy_client, needed, elfclass, repos)
+                entropy_client, soname, elfclass, rpath, ldpaths, repos)
+
             data_size = len(data_solved)
             data_solved = [(pkg_id, pkg_repo, path) for \
                 pkg_id, pkg_repo, path in data_solved if (pkg_id, pkg_repo)
                     not in packages_cache]
+
             if not data_solved or (data_size != len(data_solved)):
                 continue
 
             # check if the package is providing its own food
-            provided_paths = provided_libs.get((needed, elfclass))
+            provided_paths = provided_libs.get((soname, elfclass))
             found = False
             if provided_paths:
                 for pkg_id, pkg_repo, path in data_solved:
@@ -1453,7 +1287,7 @@ class QAInterface(TextInterface, EntropyPluginStore):
                     # but in general, system packages are implicit deps
                     break
 
-                map_key = (needed, elfclass)
+                map_key = (soname, elfclass)
                 keyslot = "%s%s%s" % (key, etpConst['entropyslotprefix'],
                     slot,)
 

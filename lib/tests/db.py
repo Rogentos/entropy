@@ -141,13 +141,12 @@ class EntropyRepositoryTest(unittest.TestCase):
             _misc.clean_pkg_metadata(data)
             self.assertEqual(data, db_data)
 
-            db_needed = self.test_db.retrieveNeeded(
-                idpackage, extended = True)
-            self.assertEqual(db_needed, data['needed'])
-            db_needed = self.test_db.retrieveNeeded(idpackage)
-            self.assertEqual(
-                db_needed,
-                tuple((lib for lib, elf_c in data['needed'])))
+            db_needed = self.test_db.retrieveNeededLibraries(
+                idpackage)
+            self.assertEqual(db_needed, data['needed_libs'])
+
+            db_needed = self.test_db.retrieveNeededLibraries(idpackage)
+            self.assertEqual(db_needed, data['needed_libs'])
 
     def test_dependencies(self):
         test_pkg = _misc.get_test_package3()
@@ -871,6 +870,10 @@ class EntropyRepositoryTest(unittest.TestCase):
 
         _misc.clean_pkg_metadata(data)
         _misc.clean_pkg_metadata(db_data)
+        assert set(data.keys()) == set(db_data.keys())
+        for k, v in data.items():
+            if v != db_data[k]:
+                print k, v, "vs", db_data[k]
         self.assertEqual(data, db_data)
 
         set_mute(True)

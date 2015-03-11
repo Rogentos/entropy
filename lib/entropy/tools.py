@@ -13,6 +13,7 @@
 
 """
 import stat
+import collections
 import errno
 import fcntl
 import re
@@ -2600,6 +2601,22 @@ def is_valid_md5(string):
         return True
     return False
 
+def elf_class_strtoint(elf_class_str):
+    """
+    Convert an ELF class metadataum string to its int value.
+
+    @param elf_class_str: the ELF class string
+    @type elf_class_str: string
+    @return: ELF class int value
+    @rtype: int
+    """
+    if elf_class_str in ("X86_64", "ELFCLASS64"):
+        return 2
+    elif elf_class_str in ("386", "ELFCLASS32"):
+        return 1
+    else:
+        raise ValueError('unsupported %s' % (elf_class_str,))
+
 def read_elf_class(elf_file):
     """
     Read ELF class metadatum from ELF file.
@@ -2633,6 +2650,18 @@ def is_elf_file(elf_file):
     if data == (127, 69, 76, 70):
         return True
     return False
+
+def parse_rpath(rpath):
+    """
+    Parse RPATH metadata stored in repository and return an ordered
+    list of paths.
+
+    @param rpath: raw RPATH metadata string
+    @type rpath: string
+    @return: a list of paths
+    @rtype: list
+    """
+    return rpath.split(":")
 
 def resolve_dynamic_library(library, requiring_executable):
     """
@@ -2714,6 +2743,60 @@ def read_elf_dynamic_libraries(elf_file):
                 libs = line.strip().split(" ", -1)[0].split(",")
                 outcome.update(libs)
     return outcome
+
+def read_elf_metadata(elf_file):
+    """
+    Extract soname, elf class, runpath and NEEDED metadata from ELF file.
+
+    @param elf_file: path to ELF file
+    @type elf_file: string
+    @return: dict with "soname", "class", "runpath" and "needed" keys. None if
+        no metadata is found.
+    @rtype: dict or None
+    """
+    proc = None
+    args = ("/usr/bin/scanelf", "-qF", "%M;%S;%r;%n", elf_file)
+
+    out = None
+    try:
+        proc = subprocess.Popen(args, stdout = subprocess.PIPE)
+        exit_st = proc.wait()
+        if exit_st != 0:
+            raise FileNotFound("scanelf failure")
+        out = proc.stdout.read()
+
+    except (OSError, IOError) as err:
+        if err.errno != errno.ENOENT:
+            raise
+        raise FileNotFound("/usr/bin/scanelf not found")
+
+    finally:
+        if proc is not None:
+            try:
+                proc.stdout.close()
+            except (OSError, IOError):
+                pass
+
+    if out is not None:
+        if const_is_python3():
+            out = const_convert_to_unicode(out)
+        if not out:
+            # no metadata.
+            return None
+
+        for line in out.split("\n"):
+            if line:
+                data = line.strip().split(" ", -1)[0]
+                elfclass_str, soname, runpath, libs = data.split(";")
+                libs = set(libs.split(","))
+                return {
+                    'soname': soname,
+                    'class': elf_class_strtoint(elfclass_str),
+                    'runpath': runpath,
+                    'needed': libs,
+                }
+
+    raise FileNotFound("scanelf failure")
 
 def read_elf_real_dynamic_libraries(elf_file):
     """
@@ -3069,36 +3152,42 @@ def collect_linker_paths():
     ROOT safe.
 
     @return: list of dynamic linker paths set
-    @rtype: list
+    @rtype: tuple
     """
-    builtin_paths = ["/lib", "/usr/lib"]
+    paths = collections.deque()
 
     ld_confs = ["/etc/ld.so.conf"]
     ld_so_conf_d_base = "etc/ld.so.conf.d"
     root = etpConst['systemroot'] + "/"
 
     ld_so_conf_d = os.path.join(root, ld_so_conf_d_base)
-    if os.path.isdir(ld_so_conf_d):
-        ld_confs += ["/" + os.path.join(ld_so_conf_d_base, x) for x \
-                        in os.listdir(ld_so_conf_d)]
+    try:
+        ld_confs += ["/" + os.path.join(ld_so_conf_d_base, x)
+                     for x in os.listdir(ld_so_conf_d)]
+    except (IOError, OSError) as err:
+        if err.errno not in (errno.ENOENT, errno.EACCES):
+            raise
 
-    paths = []
     enc = etpConst['conf_encoding']
 
     for ld_conf in ld_confs:
         ld_conf = os.path.join(root, ld_conf.lstrip("/"))
-        if not os.path.isfile(ld_conf):
-            continue
 
-        with codecs.open(ld_conf, "r", encoding=enc) as ld_f:
-            paths += [os.path.normpath(x.strip()) for x in ld_f.readlines() \
-                         if x.startswith("/")]
+        try:
+            with codecs.open(ld_conf, "r", encoding=enc) as ld_f:
+                for x in ld_f.readlines():
+                    if x.startswith("/"):
+                        paths.append(os.path.normpath(x.strip()))
 
-    for b_path in builtin_paths:
-        if b_path not in paths:
-            paths.append(b_path)
+        except (IOError, OSError) as err:
+            if err.errno not in (errno.ENOENT, errno.EACCES):
+                raise
 
-    return paths
+    # Add built-in paths.
+    paths.append("/lib")
+    paths.append("/usr/lib")
+
+    return tuple(paths)
 
 def collect_paths():
     """

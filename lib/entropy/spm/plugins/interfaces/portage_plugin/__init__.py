@@ -1563,18 +1563,36 @@ class PortagePlugin(SpmPlugin):
             PortagePlugin.xpak_entries['needed'])
 
         if os.path.isfile(needed_elf_file):
-            data['needed'] = self._extract_pkg_metadata_needed_elf_2(
+            needed_libs = self._extract_pkg_metadata_needed_libs_elf_2(
                 needed_elf_file)
+            # deprecated, kept for backward compatibility
+            data['needed'] = tuple(
+                sorted((soname, elfc) for _x, _x, soname, elfc, _x
+                       in needed_libs)
+            )
+            data['needed_libs'] = needed_libs
         elif os.path.isfile(needed_file):
+            needed_libs = self._extract_pkg_metadata_needed_libs(
+                needed_elf_file)
+            # deprecated, kept for backward compatibility
             # fallback to old NEEDED file
-            data['needed'] = self._extract_pkg_metadata_needed(
-                needed_file)
+            data['needed'] = tuple(
+                sorted((soname, elfc) for _x, _x, soname, elfc, _x
+                       in needed_libs)
+            )
+            data['needed_libs'] = needed_libs
         else:
+            needed_libs = self._generate_needed_libs_elf_2(
+                pkg_dir, data['content'])
+            # deprecated, kept for backward compatibility
             # some PMS like pkgcore don't generate NEEDED.ELF.2
             # generate one ourselves if possible. May generate
             # a slighly different (more complete?) content.
-            data['needed'] = self._generate_needed_elf_2(
-                pkg_dir, data['content'])
+            data['needed'] = tuple(
+                sorted((soname, elfc) for _x, _x, soname, elfc, _x
+                       in needed_libs)
+            )
+            data['needed_libs'] = needed_libs
 
         # [][][] Kernel dependent packages hook [][][]
         data['versiontag'] = ''
@@ -4660,12 +4678,12 @@ class PortagePlugin(SpmPlugin):
 
         return pkg_content
 
-    def _generate_needed_elf_2(self, pkg_dir, content):
+    def _generate_needed_libs_elf_2(self, pkg_dir, content):
         """
         Generate NEEDED.ELF.2 metadata by scraping the package
-        content directly.
+        content directly. For: needed_libs metadata.
         """
-        pkg_needed = set()
+        needed_libs = set()
         for obj, ftype in content.items():
 
             if ftype != "obj":
@@ -4688,63 +4706,60 @@ class PortagePlugin(SpmPlugin):
                     level = "warning")
                 continue
 
-            needed_libs = entropy.tools.read_elf_dynamic_libraries(
-                unpack_obj)
-            for lib in needed_libs:
-                pkg_needed.add((lib, elf_class))
-
-        return tuple(sorted(pkg_needed))
-
-    def _extract_pkg_metadata_needed_elf_2(self, needed_file):
-
-        pkg_needed = set()
-        lines = []
-
-        try:
-            with open(needed_file, "rb") as f:
-                lines = [x.strip() for x in f.readlines() if x.strip()]
-                lines = [const_convert_to_unicode(x) for x in lines]
-        except IOError:
-            return tuple()
-
-        for line in lines:
-            needed = line.split(";")
-            ownlib = needed[1]
-            ownelf = -1
-            if not os.path.isfile(ownlib):
-                # wtf? how can this be a dir or something else ??
+            meta = entropy.tools.read_elf_metadata(unpack_obj)
+            if meta is None:
                 continue
-            if const_file_readable(ownlib):
-                ownelf = entropy.tools.read_elf_class(ownlib)
-            for lib in needed[4].split(","):
-                pkg_needed.add((lib, ownelf))
 
-        return tuple(sorted(pkg_needed))
+            for soname in meta['needed']:
+                needed_libs.add((
+                    obj, meta['soname'], soname, elf_class, meta['runpath']))
 
-    def _extract_pkg_metadata_needed(self, needed_file):
+        return frozenset(needed_libs)
 
-        pkg_needed = set()
-        lines = []
+    def _extract_pkg_metadata_needed_libs_elf_2(self, needed_file):
 
         try:
             with open(needed_file, "rb") as f:
                 lines = [x.strip() for x in f.readlines() if x.strip()]
                 lines = [const_convert_to_unicode(x) for x in lines]
         except IOError:
-            return tuple()
+            return frozenset()
 
+        needed_libs = set()
         for line in lines:
-            needed = line.split()
-            if len(needed) == 2:
-                ownlib = needed[0]
-                ownelf = -1
-                if const_file_readable(ownlib):
-                    ownelf = entropy.tools.read_elf_class(ownlib)
-                for lib in needed[1].split(","):
-                    #if lib.find(".so") != -1:
-                    pkg_needed.add((lib, ownelf))
+            data = line.split(";")
+            elfclass_str, lib_user_path, usr_soname, rpath, libs_str = data[0:5]
+            elfclass = entropy.tools.elf_class_strtoint(elfclass_str)
 
-        return tuple(sorted(pkg_needed))
+            for soname in libs_str.split(","):
+                needed_libs.add(
+                    (lib_user_path, usr_soname, soname, elfclass, rpath))
+
+        return frozenset(needed_libs)
+
+    def _extract_pkg_metadata_needed_libs(self, needed_file):
+
+        try:
+            with open(needed_file, "rb") as f:
+                lines = [x.strip() for x in f.readlines() if x.strip()]
+                lines = [const_convert_to_unicode(x) for x in lines]
+        except IOError:
+            return frozenset()
+
+        needed_libs = set()
+        for line in lines:
+            data = line.split()
+            if len(data) == 2:
+                lib_user_path, libs_str = data
+                elfclass = -1
+                if const_file_readable(lib_user_path):
+                    elfclass = entropy.tools.read_elf_class(lib_user_path)
+
+                for soname in libs_str.split(","):
+                    needed_libs.add(
+                        (lib_user_path, "", soname, elfclass, ""))
+
+        return frozenset(needed_libs)
 
     def _extract_pkg_metadata_provided_libs(self, pkg_dir, content):
 
@@ -4752,15 +4767,11 @@ class PortagePlugin(SpmPlugin):
         # caused by the installation of the package, if this metadata
         # is read off a non-installed one.
         provided_libs = set()
-        ldpaths = entropy.tools.collect_linker_paths()
         for obj, ftype in content.items():
 
             if ftype not in ("obj", "sym"):
                 continue
             obj_dir, obj_name = os.path.split(obj)
-
-            if obj_dir not in ldpaths:
-                continue
 
             unpack_obj = os.path.join(pkg_dir, obj.lstrip("/"))
             try:
@@ -4771,17 +4782,26 @@ class PortagePlugin(SpmPlugin):
             # do not trust ftype
             if os.path.isdir(unpack_obj):
                 continue
+
             try:
                 if not entropy.tools.is_elf_file(unpack_obj):
                     continue
-                elf_class = entropy.tools.read_elf_class(unpack_obj)
             except IOError as err:
                 self.__output.output("%s: %s => %s" % (
                     _("IOError while reading"), unpack_obj, repr(err),),
                     level = "warning")
                 continue
 
-            provided_libs.add((obj_name, obj, elf_class,))
+            try:
+                elf_meta = entropy.tools.read_elf_metadata(unpack_obj)
+            except FileNotFound:
+                continue
+
+            if elf_meta is None:
+                continue
+
+            if elf_meta['soname']:  # no soname == no shared library
+                provided_libs.add((elf_meta['soname'], obj, elf_meta['class'],))
 
         return provided_libs
 
