@@ -5,7 +5,7 @@
 # Translators:
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy\n"
+"Project-Id-Version: Argent Entropy\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2013-03-07 09:52+0000\n"
 "PO-Revision-Date: 2012-04-16 20:08+0000\n"

@@ -5,7 +5,7 @@
 # Translators:
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Client\n"
+"Project-Id-Version: Argent Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4683,12 +4683,12 @@ msgid "Use Packages web interface"
 msgstr "Utiliser l'interface Web des paquets"
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Kogaion Linux Website"
-msgstr "Site _Web Kogaion Linux "
+msgid "_Argent Linux Website"
+msgstr "Site _Web Argent Linux "
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Kogaion Linux Website"
-msgstr "Démarrer le site Web de Kogaion Linux"
+msgid "Launch Argent Linux Website"
+msgstr "Démarrer le site Web de Argent Linux"
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
 msgid "_Exit"
@@ -4703,8 +4703,8 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Kogaion updates"
-msgstr "Impossible de surveiller les mises à jour de Kogaion"
+msgid "Cannot monitor Argent updates"
+msgstr "Impossible de surveiller les mises à jour de Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
 msgid "Entropy DBus service not available"
@@ -4722,8 +4722,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Kogaion updates available"
-msgstr "Mises à jour Kogaion disponibles"
+msgid "Argent updates available"
+msgstr "Mises à jour Argent disponibles"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4739,8 +4739,8 @@ msgstr ""
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Kogaion is up-to-date"
-msgstr "Votre Kogaion est à jour"
+msgid "Your Argent is up-to-date"
+msgstr "Votre Argent est à jour"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4752,8 +4752,8 @@ msgid "Repositories are being updated"
 msgstr "Les dépôts sont en cours de mise à jour"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Kogaion repositories status"
-msgstr "État des dépôts de Kogaion"
+msgid "Argent repositories status"
+msgstr "État des dépôts de Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4778,7 +4778,7 @@ msgid "Updates Notification Applet Enabled"
 msgstr "Applet de notification de mises à jour activé"
 
 #: ../kernel-switcher:28
-msgid "Kogaion Kernel Switcher"
+msgid "Argent Kernel Switcher"
 msgstr ""
 
 #: ../kernel-switcher:35

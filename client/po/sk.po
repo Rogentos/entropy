@@ -5,7 +5,7 @@
 # Translators:
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Client\n"
+"Project-Id-Version: Argent Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4690,12 +4690,12 @@ msgid "Use Packages web interface"
 msgstr "Použije webové rozhranie na správu balíkov"
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Kogaion Linux Website"
-msgstr "Webová stránka linuxu _Kogaion"
+msgid "_Argent Linux Website"
+msgstr "Webová stránka linuxu _Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Kogaion Linux Website"
-msgstr "Spustí webovú stránku linuxu Kogaion"
+msgid "Launch Argent Linux Website"
+msgstr "Spustí webovú stránku linuxu Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
 msgid "_Exit"
@@ -4710,8 +4710,8 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr "Tento systém by mal byť reštartovaný pri najbližšej príležitosti"
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Kogaion updates"
-msgstr "Nedajú sa sledovať aktualizácie systému Kogaion"
+msgid "Cannot monitor Argent updates"
+msgstr "Nedajú sa sledovať aktualizácie systému Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
 msgid "Entropy DBus service not available"
@@ -4730,8 +4730,8 @@ msgstr[1] "Je dostupná %s aktualizácia"
 msgstr[2] "Sú dostupné %s aktualizácie"
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Kogaion updates available"
-msgstr "Sú dostupné aktualizácie systému Kogaion"
+msgid "Argent updates available"
+msgstr "Sú dostupné aktualizácie systému Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4748,8 +4748,8 @@ msgstr "Aktualizovať teraz"
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Kogaion is up-to-date"
-msgstr "Váš systém Kogaion je aktuálny"
+msgid "Your Argent is up-to-date"
+msgstr "Váš systém Argent je aktuálny"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4761,8 +4761,8 @@ msgid "Repositories are being updated"
 msgstr "Repozitáre budú aktualizované"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Kogaion repositories status"
-msgstr "Stav repozitárov systému Kogaion"
+msgid "Argent repositories status"
+msgstr "Stav repozitárov systému Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4787,8 +4787,8 @@ msgid "Updates Notification Applet Enabled"
 msgstr "Aplet upozornení na aktualizácie je povolený"
 
 #: ../kernel-switcher:28
-msgid "Kogaion Kernel Switcher"
-msgstr "Prepínač jadier systému Kogaion"
+msgid "Argent Kernel Switcher"
+msgstr "Prepínač jadier systému Argent"
 
 #: ../kernel-switcher:35
 msgid "quiet mode"

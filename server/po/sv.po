@@ -6,7 +6,7 @@
 # Patrik Karlsson <patrik@trixon.se>, 2010
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Server\n"
+"Project-Id-Version: Argent Entropy Server\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2013-12-26 22:54+0100\n"
 "PO-Revision-Date: 2013-12-26 21:54+0000\n"

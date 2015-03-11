@@ -5,7 +5,7 @@
 # Translators:
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Client\n"
+"Project-Id-Version: Argent Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4690,12 +4690,12 @@ msgid "Use Packages web interface"
 msgstr "Використовувати веб-інтерфейс пакунків"
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Kogaion Linux Website"
-msgstr "Веб-сайт _Kogaion Linux"
+msgid "_Argent Linux Website"
+msgstr "Веб-сайт _Argent Linux"
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Kogaion Linux Website"
-msgstr "Відкрити сайт Kogaion Linux"
+msgid "Launch Argent Linux Website"
+msgstr "Відкрити сайт Argent Linux"
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
 msgid "_Exit"
@@ -4710,8 +4710,8 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Kogaion updates"
-msgstr "Неможливо відобразити оновлення Kogaion"
+msgid "Cannot monitor Argent updates"
+msgstr "Неможливо відобразити оновлення Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
 msgid "Entropy DBus service not available"
@@ -4730,8 +4730,8 @@ msgstr[1] ""
 msgstr[2] ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Kogaion updates available"
-msgstr "Оновлення Kogaion наявні"
+msgid "Argent updates available"
+msgstr "Оновлення Argent наявні"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4748,8 +4748,8 @@ msgstr ""
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Kogaion is up-to-date"
-msgstr "Ваш Kogaion вже оновлений до найновішої версії"
+msgid "Your Argent is up-to-date"
+msgstr "Ваш Argent вже оновлений до найновішої версії"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4761,8 +4761,8 @@ msgid "Repositories are being updated"
 msgstr "Репозиторії оновлюються"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Kogaion repositories status"
-msgstr "Статус репозиторіїв Kogaion"
+msgid "Argent repositories status"
+msgstr "Статус репозиторіїв Argent"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4787,7 +4787,7 @@ msgid "Updates Notification Applet Enabled"
 msgstr "Аплет повідомлення про оновлення увімкнений"
 
 #: ../kernel-switcher:28
-msgid "Kogaion Kernel Switcher"
+msgid "Argent Kernel Switcher"
 msgstr ""
 
 #: ../kernel-switcher:35

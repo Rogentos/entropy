@@ -6,7 +6,7 @@
 # Cristian Gherman <cgherman@mandrivausers.ro>, 2013
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Client\n"
+"Project-Id-Version: Argent Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4691,11 +4691,11 @@ msgid "Use Packages web interface"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Kogaion Linux Website"
+msgid "_Argent Linux Website"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Kogaion Linux Website"
+msgid "Launch Argent Linux Website"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
@@ -4711,7 +4711,7 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Kogaion updates"
+msgid "Cannot monitor Argent updates"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
@@ -4731,7 +4731,7 @@ msgstr[1] ""
 msgstr[2] ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Kogaion updates available"
+msgid "Argent updates available"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
@@ -4749,7 +4749,7 @@ msgstr ""
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Kogaion is up-to-date"
+msgid "Your Argent is up-to-date"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
@@ -4762,7 +4762,7 @@ msgid "Repositories are being updated"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Kogaion repositories status"
+msgid "Argent repositories status"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
@@ -4788,7 +4788,7 @@ msgid "Updates Notification Applet Enabled"
 msgstr ""
 
 #: ../kernel-switcher:28
-msgid "Kogaion Kernel Switcher"
+msgid "Argent Kernel Switcher"
 msgstr ""
 
 #: ../kernel-switcher:35

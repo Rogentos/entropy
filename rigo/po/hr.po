@@ -6,7 +6,7 @@
 # Ivica  Kolić <ikoli@yahoo.com>, 2012-2014
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Rigo App Manager\n"
+"Project-Id-Version: Argent Entropy Rigo App Manager\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:14+0100\n"
 "PO-Revision-Date: 2014-04-02 17:11+0000\n"

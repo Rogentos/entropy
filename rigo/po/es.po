@@ -9,7 +9,7 @@
 # tutan_kbron <the.darkspider@gmail.com>, 2014
 msgid ""
 msgstr ""
-"Project-Id-Version: Kogaion Entropy Rigo App Manager\n"
+"Project-Id-Version: Argent Entropy Rigo App Manager\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:14+0100\n"
 "PO-Revision-Date: 2014-01-04 17:15+0000\n"
