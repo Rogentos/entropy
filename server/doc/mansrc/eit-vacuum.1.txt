@@ -50,7 +50,7 @@ AUTHORS
 -------
 Eit has been accidentally prototyped during a rainy Sunday by Fabio
 Erculiani who was looking for innovative ways of handling package
-bumps in Sabayon Entropy repositories.
+bumps in Kogaion Entropy repositories.
 A few months later, Eit saw the light.
 
 

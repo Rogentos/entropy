@@ -190,8 +190,8 @@ class MagnetoCore(MagnetoCoreUI):
                 _("Launch Package Manager"), self.launch_package_manager),
             ("web_panel", _("_Packages Website"),
                 _("Use Packages web interface"), self.load_packages_url),
-            ("web_site", _("_Sabayon Linux Website"),
-                _("Launch Sabayon Linux Website"), self.load_website),
+            ("web_site", _("_Kogaion Linux Website"),
+                _("Launch Kogaion Linux Website"), self.load_website),
             None,
             ("exit", _("_Exit"), _("Exit"), self.exit_applet),
         )
@@ -340,7 +340,7 @@ class MagnetoCore(MagnetoCoreUI):
     def show_service_not_available(self):
         # inform user about missing Entropy service
         self.show_alert(
-            _("Cannot monitor Sabayon updates"),
+            _("Cannot monitor Kogaion updates"),
             "%s: %s: %s" % (
                 _("Entropy DBus service not available"),
                 _("unable to communicate with the updates service"),
@@ -367,7 +367,7 @@ class MagnetoCore(MagnetoCoreUI):
             )
             self.set_state("CRITICAL")
             self.show_alert(
-                _("Sabayon updates available"),
+                _("Kogaion updates available"),
                 ngettext("There is <b>%s</b> update available",
                     "There are <b>%s</b> updates available",
                     upd_len) % (upd_len,),
@@ -377,9 +377,9 @@ class MagnetoCore(MagnetoCoreUI):
             )
         else:
             # all fine, no updates
-            self.update_tooltip(_("Your Sabayon is up-to-date"))
+            self.update_tooltip(_("Your Kogaion is up-to-date"))
             self.set_state("OKAY")
-            self.show_alert(_("Your Sabayon is up-to-date"),
+            self.show_alert(_("Your Kogaion is up-to-date"),
                 _("No updates available at this time, cool!"),
                 force = self.manual_check_triggered
             )
@@ -392,7 +392,7 @@ class MagnetoCore(MagnetoCoreUI):
 
         # all fine, no updates
         self.update_tooltip(_("Repositories are being updated"))
-        self.show_alert(_("Sabayon repositories status"),
+        self.show_alert(_("Kogaion repositories status"),
             _("Repositories are being updated automatically")
         )
 

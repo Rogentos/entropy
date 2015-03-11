@@ -1,4 +1,4 @@
 VERSION='0.5'
 CODENAME='zomg2'
-DISTRO='Sabayon'
+DISTRO='Kogaion'
 RELEASE='Rolling'

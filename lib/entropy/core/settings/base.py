@@ -52,7 +52,7 @@ class RepositoryConfigParser(BaseConfigParser):
     of the supported arguments):
 
     [sabayon-limbo]
-    desc = Sabayon Linux Official Testing Repository
+    desc = Kogaion Linux Official Testing Repository
     repo = http://pkg.sabayon.org
     repo = http://pkg.repo.sabayon.org
     pkg = http://pkg.sabayon.org
