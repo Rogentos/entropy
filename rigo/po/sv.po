@@ -8,7 +8,7 @@
 # Peruvian_Torch <peruvian.torch550@gmail.com>, 2012
 msgid ""
 msgstr ""
-"Project-Id-Version: Sabayon Entropy Rigo App Manager\n"
+"Project-Id-Version: Kogaion Entropy Rigo App Manager\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:14+0100\n"
 "PO-Revision-Date: 2014-03-21 14:03+0000\n"
@@ -831,7 +831,7 @@ msgid ""
 "Several <b>Applications</b>, no longer maintained by this distribution, have"
 " been found on your <b>System</b>. Some of them might require <b>manual "
 "review</b> before being uninstalled. Click on the Apps to expand."
-msgstr " <b>Program</b>som inte längre underhålls av Sabayon har hittats på ditt <b>System</b>. Du bör <b>granska</b> dessa innan om du tänker avinstallera dom. Klicka på programmet för att öppna."
+msgstr " <b>Program</b>som inte längre underhålls av Kogaion har hittats på ditt <b>System</b>. Du bör <b>granska</b> dessa innan om du tänker avinstallera dom. Klicka på programmet för att öppna."
 
 #: ../rigo/ui/gtk3/widgets/notifications.py:677
 msgid "Manual review"

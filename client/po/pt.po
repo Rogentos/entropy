@@ -8,7 +8,7 @@
 #   <albfneto@fcfrp.usp.br>, 2012
 msgid ""
 msgstr ""
-"Project-Id-Version: Sabayon Entropy Client\n"
+"Project-Id-Version: Kogaion Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4686,12 +4686,12 @@ msgid "Use Packages web interface"
 msgstr "Use a interface Web dos pacotes"
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Sabayon Linux Website"
-msgstr "Website _Sabayon Linux "
+msgid "_Kogaion Linux Website"
+msgstr "Website _Kogaion Linux "
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Sabayon Linux Website"
-msgstr "Carrega o Site do Sabayon Linux"
+msgid "Launch Kogaion Linux Website"
+msgstr "Carrega o Site do Kogaion Linux"
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
 msgid "_Exit"
@@ -4706,8 +4706,8 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Sabayon updates"
-msgstr "Não monitora as atualizações do Sabayon"
+msgid "Cannot monitor Kogaion updates"
+msgstr "Não monitora as atualizações do Kogaion"
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
 msgid "Entropy DBus service not available"
@@ -4725,8 +4725,8 @@ msgstr[0] "Há uma atualização %s disponível"
 msgstr[1] "Existem %s atualizações disponíveis"
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Sabayon updates available"
-msgstr "Atualizações do Sabayon disponíveis"
+msgid "Kogaion updates available"
+msgstr "Atualizações do Kogaion disponíveis"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4742,8 +4742,8 @@ msgstr ""
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Sabayon is up-to-date"
-msgstr "Seu Sabayon está atualizado"
+msgid "Your Kogaion is up-to-date"
+msgstr "Seu Kogaion está atualizado"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4755,8 +4755,8 @@ msgid "Repositories are being updated"
 msgstr "Repositórios estão sendo atualizados"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Sabayon repositories status"
-msgstr "Status dos repositórios Sabayon"
+msgid "Kogaion repositories status"
+msgstr "Status dos repositórios Kogaion"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4781,7 +4781,7 @@ msgid "Updates Notification Applet Enabled"
 msgstr "Notificador de atualizações habilitado"
 
 #: ../kernel-switcher:28
-msgid "Sabayon Kernel Switcher"
+msgid "Kogaion Kernel Switcher"
 msgstr "Trocador de Kernel"
 
 #: ../kernel-switcher:35

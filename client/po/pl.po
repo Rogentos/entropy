@@ -10,7 +10,7 @@
 # RyD0pR3c <prendter@gmail.com>, 2013-2014
 msgid ""
 msgstr ""
-"Project-Id-Version: Sabayon Entropy Client\n"
+"Project-Id-Version: Kogaion Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-03-23 09:19+0000\n"
@@ -4695,12 +4695,12 @@ msgid "Use Packages web interface"
 msgstr "Interfejs webowy dla pakietów"
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Sabayon Linux Website"
-msgstr "_Witryna Sabayon Linux"
+msgid "_Kogaion Linux Website"
+msgstr "_Witryna Kogaion Linux"
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Sabayon Linux Website"
-msgstr "Wyświetl witrynę Sabayona"
+msgid "Launch Kogaion Linux Website"
+msgstr "Wyświetl witrynę Kogaiona"
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
 msgid "_Exit"
@@ -4715,8 +4715,8 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr "System powinien zostać zrestartowany jak najszybciej, gdy tylko będzie to wygodne"
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Sabayon updates"
-msgstr "Nie można monitorować aktualizacji Sabayona"
+msgid "Cannot monitor Kogaion updates"
+msgstr "Nie można monitorować aktualizacji Kogaiona"
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
 msgid "Entropy DBus service not available"
@@ -4735,8 +4735,8 @@ msgstr[1] "Są %s dostępne aktualizacje"
 msgstr[2] "Jest %s dostępnych aktualizacji"
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Sabayon updates available"
-msgstr "aktualizacje Sabayona dostępne"
+msgid "Kogaion updates available"
+msgstr "aktualizacje Kogaiona dostępne"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4753,8 +4753,8 @@ msgstr "Aktualizuj teraz"
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Sabayon is up-to-date"
-msgstr "Twój Sabayon jest aktualny"
+msgid "Your Kogaion is up-to-date"
+msgstr "Twój Kogaion jest aktualny"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4766,8 +4766,8 @@ msgid "Repositories are being updated"
 msgstr "Repozytoria są teraz aktualizowane"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Sabayon repositories status"
-msgstr "Status repozytoriów Sabayona"
+msgid "Kogaion repositories status"
+msgstr "Status repozytoriów Kogaiona"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4792,8 +4792,8 @@ msgid "Updates Notification Applet Enabled"
 msgstr "Aplet powiadomień o aktualizacjach aktywny"
 
 #: ../kernel-switcher:28
-msgid "Sabayon Kernel Switcher"
-msgstr "Przełącznik jądra Sabayon"
+msgid "Kogaion Kernel Switcher"
+msgstr "Przełącznik jądra Kogaion"
 
 #: ../kernel-switcher:35
 msgid "quiet mode"

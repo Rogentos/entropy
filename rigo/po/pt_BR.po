@@ -10,7 +10,7 @@
 # Pablo Diehl <pablodiehl@ymail.com>, 2012
 msgid ""
 msgstr ""
-"Project-Id-Version: Sabayon Entropy Rigo App Manager\n"
+"Project-Id-Version: Kogaion Entropy Rigo App Manager\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:14+0100\n"
 "PO-Revision-Date: 2014-02-08 16:05+0000\n"

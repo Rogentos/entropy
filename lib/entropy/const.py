@@ -578,7 +578,7 @@ def const_default_settings(rootdir):
         # default Entropy release version
         'entropyversion': "1",
         # default system name (overidden by entropy.conf settings)
-        'systemname': "Sabayon Linux",
+        'systemname': "Kogaion Linux",
         # Product identificator (standard, professional...)
         'product': "standard",
         'systemroot': original_rootdir, # default system root

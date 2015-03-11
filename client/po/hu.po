@@ -6,7 +6,7 @@
 # andrewtranslates <andrewtranslates@aol.com>, 2014
 msgid ""
 msgstr ""
-"Project-Id-Version: Sabayon Entropy Client\n"
+"Project-Id-Version: Kogaion Entropy Client\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2014-02-14 16:08+0100\n"
 "PO-Revision-Date: 2014-02-14 15:14+0000\n"
@@ -4684,11 +4684,11 @@ msgid "Use Packages web interface"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:193
-msgid "_Sabayon Linux Website"
+msgid "_Kogaion Linux Website"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:194
-msgid "Launch Sabayon Linux Website"
+msgid "Launch Kogaion Linux Website"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:196
@@ -4704,7 +4704,7 @@ msgid "This system should be restarted at your earliest convenience"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:343
-msgid "Cannot monitor Sabayon updates"
+msgid "Cannot monitor Kogaion updates"
 msgstr ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:345
@@ -4723,8 +4723,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: ../../magneto/src/magneto/core/interfaces.py:370
-msgid "Sabayon updates available"
-msgstr "Sabayon frissítések elérhetőek"
+msgid "Kogaion updates available"
+msgstr "Kogaion frissítések elérhetőek"
 
 #: ../../magneto/src/magneto/core/interfaces.py:371
 #, python-format
@@ -4740,8 +4740,8 @@ msgstr "Frissítés most"
 #. all fine, no updates
 #: ../../magneto/src/magneto/core/interfaces.py:380
 #: ../../magneto/src/magneto/core/interfaces.py:382
-msgid "Your Sabayon is up-to-date"
-msgstr "Naprakész a Sabayon"
+msgid "Your Kogaion is up-to-date"
+msgstr "Naprakész a Kogaion"
 
 #: ../../magneto/src/magneto/core/interfaces.py:383
 msgid "No updates available at this time, cool!"
@@ -4753,8 +4753,8 @@ msgid "Repositories are being updated"
 msgstr "A programcsomagok épp automatikusan frissülnek"
 
 #: ../../magneto/src/magneto/core/interfaces.py:395
-msgid "Sabayon repositories status"
-msgstr "Sabayon programcsomagok státusza"
+msgid "Kogaion repositories status"
+msgstr "Kogaion programcsomagok státusza"
 
 #: ../../magneto/src/magneto/core/interfaces.py:396
 msgid "Repositories are being updated automatically"
@@ -4779,7 +4779,7 @@ msgid "Updates Notification Applet Enabled"
 msgstr ""
 
 #: ../kernel-switcher:28
-msgid "Sabayon Kernel Switcher"
+msgid "Kogaion Kernel Switcher"
 msgstr ""
 
 #: ../kernel-switcher:35
